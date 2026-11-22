@@ -48,6 +48,7 @@ private:
  juce::dsp::Convolution reverb;
  juce::SmoothedValue<float> reverbMix;
  float lastReverbLength=0.f;
+ float eqLevelGain=1.f;
  std::atomic<int> capturedCount{0};
  int captureSize=0;
  std::atomic<bool> readyToMatch{false};
