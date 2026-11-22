@@ -167,13 +167,13 @@ void DrumBusProcessor::buildMatch(){
     weights+=w;
    }
   }
-  gains[(size_t)b]=juce::jlimit(-30.f,30.f,(float)(weighted/weights));
+  // Conservative matching strength for the first stable audio test.
+  // +/-30 dB remains the design range; avoid applying it at full strength yet.
+  gains[(size_t)b]=juce::jlimit(-12.f,12.f,(float)(0.35*weighted/weights));
  }
- // Remove a broad residual tilt bias to avoid systematic brightening.
- // Overall headroom is applied before any positive EQ gains reach the output.
- float maxBoost=0.f;
- for(float g:gains)maxBoost=juce::jmax(maxBoost,g);
- const float newOutputGain=juce::Decibels::decibelsToGain(-maxBoost);
+ // Do not subtract the largest narrow-band boost from the entire signal.
+ // Keep unity output trim; the host must retain sufficient headroom.
+ const float newOutputGain=1.f;
  juce::SpinLock::ScopedLockType lock(eqLock);
  for(int b=0;b<bands;++b){
   const double f=25.0*std::pow(20000.0/25.0,(b+0.5)/(double)bands);
