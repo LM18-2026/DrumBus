@@ -347,25 +347,33 @@ void DrumBusProcessor::buildMatch(){
  matched.store(true,std::memory_order_release);
 }
 bool DrumBusProcessor::getEqResponse(EqResponse& response){
- response.fill(0.f);
- if(!matched.load(std::memory_order_acquire))return true;
+ if(!matched.load(std::memory_order_acquire)){
+  response.fill(0.f);
+  return true;
+ }
  juce::SpinLock::ScopedTryLockType lock(eqLock);
+ // Never overwrite the last valid curve if the EQ is being rebuilt.
  if(!lock.isLocked())return false;
  const bool enabled=state.getRawParameterValue("enable")->load()>0.5f;
  const double blend=juce::jlimit(0.0,1.0,(double)state.getRawParameterValue("blend")->load()/100.0);
- if(!enabled || blend<=0.0)return true;
+ if(!enabled || blend<=0.0){
+  response.fill(0.f);
+  return true;
+ }
+ EqResponse nextResponse{};
  const double nyquist=rate*0.5;
  for(int i=0;i<eqDisplayPoints;++i){
   const double hz=20.0*std::pow(1000.0,(double)i/(eqDisplayPoints-1));
-  if(hz>=nyquist){response[(size_t)i]=0.f;continue;}
+  if(hz>=nyquist){nextResponse[(size_t)i]=0.f;continue;}
   double magnitude=1.0;
   for(const auto& filter:eq[0]){
    magnitude*=filter.coefficients->getMagnitudeForFrequency(hz,rate);
   }
   // Magnitude of dry/wet mixing, excluding time-varying RMS level trim.
   const double mixed=(1.0-blend)+blend*magnitude;
-  response[(size_t)i]=(float)juce::jlimit(-60.0,60.0,20.0*std::log10(juce::jmax(1.e-9,mixed)));
+  nextResponse[(size_t)i]=(float)juce::jlimit(-60.0,60.0,20.0*std::log10(juce::jmax(1.e-9,mixed)));
  }
+ response=nextResponse;
  return true;
 }
 void DrumBusProcessor::getStateInformation(juce::MemoryBlock& out){
