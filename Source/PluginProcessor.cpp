@@ -97,12 +97,7 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  if(blend>0.f && *state.getRawParameterValue("enable")>0.5f && matched.load(std::memory_order_acquire)){
   juce::SpinLock::ScopedTryLockType lock(eqLock);
   if(lock.isLocked()){
-   float inputPeak=0.f,outputPeak=0.f;
-   for(int c=0;c<2;++c){
-    auto* data=buffer.getWritePointer(c);
-    for(int i=0;i<n;++i)inputPeak=juce::jmax(inputPeak,std::abs(data[i]));
-   }
-   // Process into a scratch copy: do not alter the original until the peak guard is known.
+   // Process into preallocated scratch buffer. The EQ gain budget is enforced at match creation.
    if(n>processed.getNumSamples())return;
    for(int c=0;c<2;++c){
     auto* data=buffer.getReadPointer(c);
@@ -111,14 +106,13 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
      float v=data[i];
      for(auto& filter:eq[(size_t)c])v=filter.processSample(v);
      dest[i]=v;
-     outputPeak=juce::jmax(outputPeak,std::abs(v));
+
     }
    }
-   const float guard=outputPeak>inputPeak && outputPeak>1.e-9f ? inputPeak/outputPeak : 1.f;
    for(int c=0;c<2;++c){
     auto* data=buffer.getWritePointer(c);
     const auto* wet=processed.getReadPointer(c);
-    for(int i=0;i<n;++i)data[i]=(1.f-blend)*data[i]+blend*wet[i]*guard;
+    for(int i=0;i<n;++i)data[i]=(1.f-blend)*data[i]+blend*wet[i];
    }
   }
  }
@@ -142,15 +136,24 @@ void DrumBusProcessor::buildMatch(){
  // Compare normalized spectral shapes, not the absolute recording levels.
  double refTotal=0.0,inTotal=0.0;
  for(int b=0;b<bands;++b){refTotal+=reference[b];inTotal+=input[b]/frames;}
+ if(refTotal<1.e-12 || inTotal<1.e-12){matched.store(false);return;}
  refTotal=juce::jmax(refTotal,1.e-18);
  inTotal=juce::jmax(inTotal,1.e-18);
+ std::array<float,bands> gains{};
+ float positiveSum=0.f;
+ for(int b=0;b<bands;++b){
+  const double ref=reference[b]/refTotal,actual=(input[b]/frames)/inTotal;
+  // Stronger individual correction, but prevent the sum of positive boosts
+  // from exceeding 6 dB even when the overlapping filters interact.
+  gains[(size_t)b]=juce::jlimit(-6.f,6.f,(float)(10.0*std::log10((ref+1e-10)/(actual+1e-10))));
+  positiveSum+=juce::jmax(0.f,gains[(size_t)b]);
+ }
+ const float positiveScale=positiveSum>6.f?6.f/positiveSum:1.f;
  juce::SpinLock::ScopedLockType lock(eqLock);
  for(int b=0;b<bands;++b){
   const double f=25.0*std::pow(20000.0/25.0,(b+0.5)/(double)bands);
   frequencies[b]=f;
-  const double ref=reference[b]/refTotal,actual=(input[b]/frames)/inTotal;
-  // Cap correction to prevent excessive amplification of near-empty bands.
-  const float gain=juce::jlimit(-3.f,3.f,(float)(10.0*std::log10((ref+1e-10)/(actual+1e-10))));
+  const float gain=gains[(size_t)b]>0.f?gains[(size_t)b]*positiveScale:gains[(size_t)b];
   const float center=(float)juce::jmin(f,rate*0.45);
   auto coeff=juce::dsp::IIR::Coefficients<float>::makePeakFilter(rate,center,2.0f,juce::Decibels::decibelsToGain(gain));
   for(int c=0;c<2;++c)*eq[(size_t)c][(size_t)b].coefficients=*coeff;
