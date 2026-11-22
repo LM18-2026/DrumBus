@@ -43,7 +43,7 @@ private:
  std::array<float,fftSize> window{},frame{};
  std::array<float,fftSize*2> fftData{};
  std::array<std::array<juce::dsp::IIR::Filter<float>,bands>,2> eq;
- juce::AudioBuffer<float> captured;
+ juce::AudioBuffer<float> captured,processed;
  std::atomic<int> capturedCount{0};
  int captureSize=0;
  std::atomic<bool> readyToMatch{false};
