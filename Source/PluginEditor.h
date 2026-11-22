@@ -8,9 +8,12 @@ public:
 private:
  void timerCallback() override {repaint();}
  DrumBusProcessor& processor;
- juce::ToggleButton analyse{"LISTEN 5 s"},enabled{"MATCH EQ"};
+ juce::TextButton analyse{"EQ LISTEN (5 s)"};
+ juce::ToggleButton enabled{"MATCH EQ"};
+ juce::Slider blend;
  juce::ComboBox phase;
- std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> listenAttachment,enableAttachment;
+ std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> enableAttachment;
  std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> phaseAttachment;
+ std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> blendAttachment;
  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumBusEditor)
 };
