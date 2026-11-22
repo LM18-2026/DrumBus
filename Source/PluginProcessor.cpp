@@ -139,7 +139,8 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  if(n<=reverbBuffer.getNumSamples()){
   for(int c=0;c<2;++c)reverbBuffer.copyFrom(c,0,buffer,c,0,n);
   juce::dsp::AudioBlock<float> wetBlock(reverbBuffer);
-  juce::dsp::ProcessContextReplacing<float> wetContext(wetBlock.getSubBlock(0,(size_t)n));
+  auto wetSubBlock=wetBlock.getSubBlock(0,(size_t)n);
+  juce::dsp::ProcessContextReplacing<float> wetContext(wetSubBlock);
   reverb.process(wetContext);
   const bool enabled=*state.getRawParameterValue("reverbEnable")>0.5f;
   reverbMix.setTargetValue(enabled?*state.getRawParameterValue("reverbMix")/100.f:0.f);
