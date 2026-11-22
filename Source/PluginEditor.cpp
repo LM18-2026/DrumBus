@@ -1,9 +1,18 @@
 #include "PluginEditor.h"
 DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p),processor(p){
  setSize(1200,620);
- addAndMakeVisible(analyse);addAndMakeVisible(enabled);addAndMakeVisible(phase);
+ addAndMakeVisible(analyse);addAndMakeVisible(enabled);addAndMakeVisible(phase);addAndMakeVisible(blend);
+ blend.setSliderStyle(juce::Slider::LinearHorizontal);
+ blend.setTextBoxStyle(juce::Slider::TextBoxRight,false,65,24);
+ blend.setNumDecimalPlacesToDisplay(0);
+ blendAttachment=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,"blend",blend);
+ analyse.onClick=[this]{
+  if(auto* p=processor.state.getParameter("listen")){
+   p->beginChangeGesture();p->setValueNotifyingHost(1.f);p->endChangeGesture();
+  }
+ };
  phase.addItem("MinPhase",1);phase.addItem("LinPhase",2);
- listenAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"listen",analyse);
+
  enableAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"enable",enabled);
  phaseAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.state,"phase",phase);
  startTimerHz(10);
@@ -16,7 +25,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("LM18 DrumBus",25,15,480,45,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));
  g.setFont(juce::Font(juce::FontOptions(16.f)));
- g.drawText("V0.2  |  GUI",1030,20,140,30,juce::Justification::centredRight);
+ g.drawText("V0.3  |  GUI",1030,20,140,30,juce::Justification::centredRight);
  auto section=[&](juce::Rectangle<int> r,const juce::String& title){
   g.setColour(panel);g.fillRoundedRectangle(r.toFloat(),12.f);
   g.setColour(line);g.drawRoundedRectangle(r.toFloat().reduced(1.f),12.f,1.5f);
@@ -41,6 +50,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("30-band response display: not yet implemented",60,310,485,40,juce::Justification::centred);
  const juce::String status=processor.matched.load()?"MATCH READY":("ANALYSIS  "+juce::String(processor.analysisPercent.load())+" %");
  g.setColour(line);g.drawText(status,42,470,515,28,juce::Justification::centred);
+ g.setColour(juce::Colours::white);g.drawText("EQ BLEND",40,505,110,25,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));
  g.drawText("DRY / WET",620,145,220,30,juce::Justification::centred);
  g.drawText("IR LENGTH  -100 ... +100",610,245,240,30,juce::Justification::centred);
@@ -53,6 +63,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
 }
 void DrumBusEditor::resized(){
  analyse.setBounds(38,155,145,40);
+ blend.setBounds(155,500,390,35);
  enabled.setBounds(195,155,125,40);
  phase.setBounds(335,155,225,40);
 }
