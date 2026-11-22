@@ -6,8 +6,9 @@ public:
  void paint(juce::Graphics&) override;
  void resized() override;
 private:
- void timerCallback() override {repaint();}
+ void timerCallback() override {processor.getEqResponse(responseCurve);repaint();}
  DrumBusProcessor& processor;
+ DrumBusProcessor::EqResponse responseCurve{};
  juce::TextButton analyse{"EQ LISTEN (5 s)"};
  juce::ToggleButton enabled{"MATCH EQ"};
  juce::Slider blend,depth,reverbWet,reverbLength;
