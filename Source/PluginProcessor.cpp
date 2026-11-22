@@ -200,7 +200,9 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
   const float preL=clipPre[0].processSample(a);
   const float preR=clipPre[1].processSample(b);
   if(clipListening && !clipReady.load(std::memory_order_relaxed)){
-   clipObservedPeak=juce::jmax(clipObservedPeak,std::abs(preL),std::abs(preR));
+   // Measure the unfiltered post-reverb input peak: the user-facing
+   // reduction is defined in the same domain as the final plugin output.
+   clipObservedPeak=juce::jmax(clipObservedPeak,std::abs(a),std::abs(b));
    if(++clipSamples>=captureSize){
     clipThreshold=juce::jmax(1.e-6f,clipObservedPeak);
     clipReady.store(true,std::memory_order_release);
@@ -216,8 +218,11 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
   const float postL=clipPost[0].processSample(limitedL);
   const float postR=clipPost[1].processSample(limitedR);
   if(active){
-   buffer.setSample(0,i,postL);
-   buffer.setSample(1,i,postR);
+   // The inverse low shelf can restore peaks above the clipping threshold.
+   // Enforce the user-requested ceiling in the actual output domain.
+   const float ceiling=juce::jmax(1.e-6f,clipThreshold*juce::Decibels::decibelsToGain(-reduction));
+   buffer.setSample(0,i,juce::jlimit(-ceiling,ceiling,postL));
+   buffer.setSample(1,i,juce::jlimit(-ceiling,ceiling,postR));
   }
  }
 }
