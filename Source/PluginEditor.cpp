@@ -89,7 +89,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("20 kHz",490,430,68,18,juce::Justification::right);
  const juce::String status=processor.matched.load()?"MATCH READY":("ANALYSIS  "+juce::String(processor.analysisPercent.load())+" %");
  g.setColour(juce::Colours::white);g.drawText("MATCH DEPTH",40,208,125,25,juce::Justification::centredLeft);
- g.setColour(line);g.drawText(status,42,118,300,25,juce::Justification::centred);
+ g.setColour(line);g.drawText(status,42,455,300,25,juce::Justification::centred);
  g.setColour(juce::Colours::white);g.drawText("EQ BLEND",40,495,110,25,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));
  g.drawText("REVERB BLEND",612,172,116,25,juce::Justification::centred);
