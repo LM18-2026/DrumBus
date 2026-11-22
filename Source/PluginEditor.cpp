@@ -37,7 +37,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("LM18 DrumBus",25,15,480,45,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));
  g.setFont(juce::Font(juce::FontOptions(16.f)));
- g.drawText("V0.8  |  GUI",1030,20,140,30,juce::Justification::centredRight);
+ g.drawText("V0.9  |  GUI",1030,20,140,30,juce::Justification::centredRight);
  auto section=[&](juce::Rectangle<int> r,const juce::String& title){
   g.setColour(panel);g.fillRoundedRectangle(r.toFloat(),12.f);
   g.setColour(line);g.drawRoundedRectangle(r.toFloat().reduced(1.f),12.f,1.5f);
@@ -65,9 +65,10 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.setColour(line);g.drawText(status,42,456,515,25,juce::Justification::centred);
  g.setColour(juce::Colours::white);g.drawText("EQ BLEND",40,495,110,25,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));
- g.drawText("DRY / WET",620,145,220,30,juce::Justification::centred);
- g.drawText("IR LENGTH (-100 to +100)",610,245,240,30,juce::Justification::centred);
- g.drawText("Embedded IR: LexRoom1.wav",610,400,240,32,juce::Justification::centred);
+ g.drawText("DRY / WET",612,172,116,25,juce::Justification::centred);
+ g.drawText("IR LENGTH",734,172,116,25,juce::Justification::centred);
+ g.drawText("-100 ... +100",734,335,116,22,juce::Justification::centred);
+ g.drawText("IR: LexRoom1.wav",610,407,240,32,juce::Justification::centred);
  g.drawText("5 s ANALYSIS",892,145,270,30,juce::Justification::centred);
  g.drawText("SHELF  ->  CLIP  ->  INV. SHELF",887,235,280,50,juce::Justification::centred);
  g.drawText("CLIP REDUCTION  0 ... 6 dB",887,325,280,35,juce::Justification::centred);
@@ -80,7 +81,7 @@ void DrumBusEditor::resized(){
  depth.setBounds(170,203,375,35);
  enabled.setBounds(195,155,125,40);
  phase.setBounds(335,155,225,40);
- reverbWet.setBounds(615,175,110,125);
- reverbLength.setBounds(735,275,110,125);
+ reverbWet.setBounds(612,210,116,125);
+ reverbLength.setBounds(734,210,116,125);
  reverbEnabled.setBounds(640,465,170,38);
 }
