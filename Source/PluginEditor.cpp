@@ -1,11 +1,15 @@
 #include "PluginEditor.h"
 DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p),processor(p){
  setSize(1200,620);
- addAndMakeVisible(analyse);addAndMakeVisible(enabled);addAndMakeVisible(phase);addAndMakeVisible(blend);
+ addAndMakeVisible(analyse);addAndMakeVisible(enabled);addAndMakeVisible(phase);addAndMakeVisible(blend);addAndMakeVisible(depth);
  blend.setSliderStyle(juce::Slider::LinearHorizontal);
  blend.setTextBoxStyle(juce::Slider::TextBoxRight,false,65,24);
  blend.setNumDecimalPlacesToDisplay(0);
  blendAttachment=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,"blend",blend);
+ depth.setSliderStyle(juce::Slider::LinearHorizontal);
+ depth.setTextBoxStyle(juce::Slider::TextBoxRight,false,65,24);
+ depth.setNumDecimalPlacesToDisplay(0);
+ depthAttachment=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,"strength",depth);
  analyse.onClick=[this]{
   if(auto* p=processor.state.getParameter("listen")){
    p->beginChangeGesture();p->setValueNotifyingHost(1.f);p->endChangeGesture();
@@ -25,7 +29,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("LM18 DrumBus",25,15,480,45,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));
  g.setFont(juce::Font(juce::FontOptions(16.f)));
- g.drawText("V0.6  |  GUI",1030,20,140,30,juce::Justification::centredRight);
+ g.drawText("V0.7  |  GUI",1030,20,140,30,juce::Justification::centredRight);
  auto section=[&](juce::Rectangle<int> r,const juce::String& title){
   g.setColour(panel);g.fillRoundedRectangle(r.toFloat(),12.f);
   g.setColour(line);g.drawRoundedRectangle(r.toFloat().reduced(1.f),12.f,1.5f);
@@ -49,6 +53,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.setColour(juce::Colour(0xffa8b8ca));g.setFont(juce::Font(juce::FontOptions(14.f)));
  g.drawText("30-band response display: not yet implemented",60,310,485,40,juce::Justification::centred);
  const juce::String status=processor.matched.load()?"MATCH READY":("ANALYSIS  "+juce::String(processor.analysisPercent.load())+" %");
+ g.setColour(juce::Colours::white);g.drawText("MATCH DEPTH",40,208,125,25,juce::Justification::centredLeft);
  g.setColour(line);g.drawText(status,42,456,515,25,juce::Justification::centred);
  g.setColour(juce::Colours::white);g.drawText("EQ BLEND",40,495,110,25,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));
@@ -64,6 +69,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
 void DrumBusEditor::resized(){
  analyse.setBounds(38,155,145,40);
  blend.setBounds(155,492,390,35);
+ depth.setBounds(170,203,375,35);
  enabled.setBounds(195,155,125,40);
  phase.setBounds(335,155,225,40);
 }
