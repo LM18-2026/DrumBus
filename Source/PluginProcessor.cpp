@@ -72,6 +72,8 @@ void DrumBusProcessor::prepareToPlay(double sr,int block){
  rate=sr;
  captureSize=(int)std::ceil(sr*5.0);
  captured.setSize(1,captureSize);
+ clipCapturedPre.setSize(2,captureSize);
+ clipCapturedOriginal.setSize(2,captureSize);
  processed.setSize(2,juce::jmax(1,block));
  reverbBuffer.setSize(2,juce::jmax(1,block));
  reverb.prepare({sr,(juce::uint32)juce::jmax(1,block),2});
@@ -79,7 +81,8 @@ void DrumBusProcessor::prepareToPlay(double sr,int block){
  reverbMix.setCurrentAndTargetValue(0.f);
  lastReverbLength=0.f;
  eqLevelGain=1.f;
- clipSamples=0;clipObservedPeak=0.f;clipWasListening=false;
+ clipSamples=0;clipObservedPeak=0.f;clipOriginalPeak=0.f;clipWasListening=false;
+ clipCaptureComplete.store(false);clipMakeup.store(1.f);clipCalibratedReduction=-1.f;
  clipReady.store(false);clipAnalysisPercent.store(0);
  clipThreshold=1.f;
  clipThresholdSmooth.reset(sr,0.05);
@@ -189,7 +192,10 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  const bool clipListening=*state.getRawParameterValue("clipListen")>0.5f;
  if(clipListening && !clipWasListening){
   clipReady.store(false,std::memory_order_release);
-  clipSamples=0;clipObservedPeak=0.f;clipAnalysisPercent.store(0);
+  clipCaptureComplete.store(false,std::memory_order_release);
+  clipMakeup.store(1.f,std::memory_order_release);
+  clipSamples=0;clipObservedPeak=0.f;clipOriginalPeak=0.f;clipCalibratedReduction=-1.f;
+  clipAnalysisPercent.store(0);
  }
  clipWasListening=clipListening;
  const bool clipping=*state.getRawParameterValue("clipEnable")>0.5f;
@@ -200,12 +206,17 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
   const float a=buffer.getSample(0,i),b=buffer.getSample(1,i);
   const float preL=clipPre[0].processSample(a);
   const float preR=clipPre[1].processSample(b);
-  if(clipListening && !clipReady.load(std::memory_order_relaxed)){
+  if(clipListening && !clipCaptureComplete.load(std::memory_order_relaxed)){
    // Analyse the bass-attenuated signal actually entering the clipper.
    clipObservedPeak=juce::jmax(clipObservedPeak,std::abs(preL),std::abs(preR));
+   clipOriginalPeak=juce::jmax(clipOriginalPeak,std::abs(a),std::abs(b));
+   clipCapturedPre.setSample(0,clipSamples,preL);
+   clipCapturedPre.setSample(1,clipSamples,preR);
+   clipCapturedOriginal.setSample(0,clipSamples,a);
+   clipCapturedOriginal.setSample(1,clipSamples,b);
    if(++clipSamples>=captureSize){
     clipThreshold=juce::jmax(1.e-6f,clipObservedPeak);
-    clipReady.store(true,std::memory_order_release);
+    clipCaptureComplete.store(true,std::memory_order_release);
     clipAnalysisPercent.store(100);
    }else if((clipSamples&1023)==0)
     clipAnalysisPercent.store((int)(100.0*clipSamples/captureSize));
@@ -223,7 +234,7 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
   if(active){
    // Clip only the bass-attenuated path. Restore bass with the inverse
    // shelf, then raise the complete output by the selected reduction.
-   const float makeup=juce::Decibels::decibelsToGain(reduction);
+   const float makeup=clipMakeup.load(std::memory_order_relaxed);
    buffer.setSample(0,i,postL*makeup);
    buffer.setSample(1,i,postR*makeup);
   }
@@ -268,7 +279,37 @@ void DrumBusProcessor::loadScaledReverb(float amount){
   channels==2?juce::dsp::Convolution::Stereo::yes:juce::dsp::Convolution::Stereo::no,
   juce::dsp::Convolution::Trim::no,juce::dsp::Convolution::Normalise::no);
 }
+void DrumBusProcessor::calibrateClipper(){
+ if(!clipCaptureComplete.load(std::memory_order_acquire))return;
+ const float reduction=juce::jlimit(0.f,12.f,state.getRawParameterValue("clipReduction")->load());
+ if(clipReady.load(std::memory_order_acquire) && reduction==clipCalibratedReduction)return;
+ // Reconstruct the captured five-second signal using a separate pair of
+ // inverse shelves. Never mutate the live audio filters from the timer.
+ auto coefficients=juce::dsp::IIR::Coefficients<float>::makeLowShelf(
+  rate,300.0,0.70710678f,juce::Decibels::decibelsToGain(24.f));
+ const float threshold=juce::jmax(1.e-6f,clipThreshold*juce::Decibels::decibelsToGain(-reduction));
+ double reconstructedPeak=0.0;
+ for(int c=0;c<2;++c){
+  juce::dsp::IIR::Filter<float> inverse;
+  *inverse.coefficients=*coefficients;
+  inverse.reset();
+  const float* samples=clipCapturedPre.getReadPointer(c);
+  for(int i=0;i<captureSize;++i){
+   const float clipped=juce::jlimit(-threshold,threshold,samples[i]);
+   reconstructedPeak=juce::jmax(reconstructedPeak,(double)std::abs(inverse.processSample(clipped)));
+  }
+ }
+ const float original=clipOriginalPeak;
+ // Keep the original peak after bass restoration. This is a calibration
+ // of the analysed five-second section, not a guarantee for future audio.
+ const float makeup=(original>1.e-8f && reconstructedPeak>1.e-8)
+  ?juce::jlimit(0.01f,32.f,(float)(original/reconstructedPeak)):1.f;
+ clipMakeup.store(makeup,std::memory_order_release);
+ clipCalibratedReduction=reduction;
+ clipReady.store(true,std::memory_order_release);
+}
 void DrumBusProcessor::timerCallback(){
+ calibrateClipper();
  const float length=*state.getRawParameterValue("reverbLength");
  if(length!=lastReverbLength){loadScaledReverb(length);lastReverbLength=length;}
 
