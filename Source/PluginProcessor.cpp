@@ -25,13 +25,18 @@ void DrumBusProcessor::analyseFrame(const float* samples,std::array<double,bands
  std::fill(fftData.begin(),fftData.end(),0.f);
  for(int i=0;i<fftSize;++i)fftData[i]=samples[i]*window[i];
  fft.performRealOnlyForwardTransform(fftData.data());
+ std::array<int,bands> binCount{};
  for(int i=1;i<fftSize/2;++i){
   int b=bandForFrequency(i*rate/fftSize);
   if(b>=0){
    const double re=fftData[2*i],im=fftData[2*i+1];
    totals[(size_t)b]+=(re*re+im*im);
+   ++binCount[(size_t)b];
   }
  }
+ // Average spectral power per FFT bin, not summed band energy.
+ for(int b=0;b<bands;++b)if(binCount[(size_t)b]>0)
+  totals[(size_t)b]/=binCount[(size_t)b];
 }
 void DrumBusProcessor::analyseReference(){
  juce::WavAudioFormat wav;
@@ -112,7 +117,7 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
    for(int c=0;c<2;++c){
     auto* data=buffer.getWritePointer(c);
     const auto* wet=processed.getReadPointer(c);
-    for(int i=0;i<n;++i)data[i]=(1.f-blend)*data[i]+blend*wet[i];
+    for(int i=0;i<n;++i)data[i]=(1.f-blend)*data[i]+blend*wet[i]*eqOutputGain;
    }
   }
  }
@@ -133,32 +138,52 @@ void DrumBusProcessor::buildMatch(){
   ++frames;
  }
  if(frames==0)return;
- // Compare normalized spectral shapes, not the absolute recording levels.
- double refTotal=0.0,inTotal=0.0;
- for(int b=0;b<bands;++b){refTotal+=reference[b];inTotal+=input[b]/frames;}
- if(refTotal<1.e-12 || inTotal<1.e-12){matched.store(false);return;}
- refTotal=juce::jmax(refTotal,1.e-18);
- inTotal=juce::jmax(inTotal,1.e-18);
- std::array<float,bands> gains{};
- float positiveSum=0.f;
+ // Normalize log spectra to their mean shape. Reject bands with no signal.
+ std::array<double,bands> difference{};
+ double meanDifference=0.0;
+ int valid=0;
  for(int b=0;b<bands;++b){
-  const double ref=reference[b]/refTotal,actual=(input[b]/frames)/inTotal;
-  // Stronger individual correction, but prevent the sum of positive boosts
-  // from exceeding 6 dB even when the overlapping filters interact.
-  gains[(size_t)b]=juce::jlimit(-6.f,6.f,(float)(10.0*std::log10((ref+1e-10)/(actual+1e-10))));
-  positiveSum+=juce::jmax(0.f,gains[(size_t)b]);
+  const double ref=reference[(size_t)b];
+  const double in=input[(size_t)b]/frames;
+  if(ref>1.e-12 && in>1.e-12){
+   difference[(size_t)b]=10.0*std::log10(ref/in);
+   meanDifference+=difference[(size_t)b];
+   ++valid;
+  }
  }
- const float positiveScale=positiveSum>6.f?6.f/positiveSum:1.f;
+ if(valid<10){matched.store(false);return;}
+ meanDifference/=valid;
+ for(int b=0;b<bands;++b)difference[(size_t)b]-=meanDifference;
+ // Five-band triangular smoothing avoids sharp spectral spikes.
+ std::array<float,bands> gains{};
+ for(int b=0;b<bands;++b){
+  double weighted=0.0,weights=0.0;
+  for(int d=-2;d<=2;++d){
+   const int j=b+d;
+   if(j>=0 && j<bands){
+    const double w=3-std::abs(d);
+    weighted+=w*difference[(size_t)j];
+    weights+=w;
+   }
+  }
+  gains[(size_t)b]=juce::jlimit(-30.f,30.f,(float)(weighted/weights));
+ }
+ // Remove a broad residual tilt bias to avoid systematic brightening.
+ // Overall headroom is applied before any positive EQ gains reach the output.
+ double maxBoost=0.0;
+ for(float g:gains)maxBoost+=juce::jmax(0.f,g);
+ const float newOutputGain=juce::Decibels::decibelsToGain((float)-maxBoost);
  juce::SpinLock::ScopedLockType lock(eqLock);
  for(int b=0;b<bands;++b){
   const double f=25.0*std::pow(20000.0/25.0,(b+0.5)/(double)bands);
   frequencies[b]=f;
-  const float gain=gains[(size_t)b]>0.f?gains[(size_t)b]*positiveScale:gains[(size_t)b];
+  const float gain=gains[(size_t)b];
   const float center=(float)juce::jmin(f,rate*0.45);
-  auto coeff=juce::dsp::IIR::Coefficients<float>::makePeakFilter(rate,center,2.0f,juce::Decibels::decibelsToGain(gain));
+  auto coeff=juce::dsp::IIR::Coefficients<float>::makePeakFilter(rate,center,4.0f,juce::Decibels::decibelsToGain(gain));
   for(int c=0;c<2;++c)*eq[(size_t)c][(size_t)b].coefficients=*coeff;
  }
  for(auto& channel:eq)for(auto& filter:channel)filter.reset();
+ eqOutputGain=newOutputGain;
  matched.store(true,std::memory_order_release);
 }
 void DrumBusProcessor::getStateInformation(juce::MemoryBlock& out){
