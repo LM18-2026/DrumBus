@@ -49,8 +49,8 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.setColour(juce::Colour(0xffa8b8ca));g.setFont(juce::Font(juce::FontOptions(14.f)));
  g.drawText("30-band response display: not yet implemented",60,310,485,40,juce::Justification::centred);
  const juce::String status=processor.matched.load()?"MATCH READY":("ANALYSIS  "+juce::String(processor.analysisPercent.load())+" %");
- g.setColour(line);g.drawText(status,42,470,515,28,juce::Justification::centred);
- g.setColour(juce::Colours::white);g.drawText("EQ BLEND",40,505,110,25,juce::Justification::centredLeft);
+ g.setColour(line);g.drawText(status,42,456,515,25,juce::Justification::centred);
+ g.setColour(juce::Colours::white);g.drawText("EQ BLEND",40,495,110,25,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));
  g.drawText("DRY / WET",620,145,220,30,juce::Justification::centred);
  g.drawText("IR LENGTH  -100 ... +100",610,245,240,30,juce::Justification::centred);
@@ -63,7 +63,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
 }
 void DrumBusEditor::resized(){
  analyse.setBounds(38,155,145,40);
- blend.setBounds(155,500,390,35);
+ blend.setBounds(155,492,390,35);
  enabled.setBounds(195,155,125,40);
  phase.setBounds(335,155,225,40);
 }
