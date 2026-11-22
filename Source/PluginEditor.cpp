@@ -1,6 +1,6 @@
 #include "PluginEditor.h"
 DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p),processor(p){
- setSize(500,270);
+ setSize(1200,620);
  addAndMakeVisible(analyse);addAndMakeVisible(enabled);addAndMakeVisible(phase);
  phase.addItem("MinPhase",1);phase.addItem("LinPhase",2);
  listenAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"listen",analyse);
@@ -9,19 +9,50 @@ DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p)
  startTimerHz(10);
 }
 void DrumBusEditor::paint(juce::Graphics& g){
- g.fillAll(juce::Colour(0xff121923));
+ const auto bg=juce::Colour(0xff101721),panel=juce::Colour(0xff1a2532),line=juce::Colour(0xff3dbadf);
+ g.fillAll(bg);
  g.setColour(juce::Colours::white);
- g.setFont(juce::Font(juce::FontOptions(27.f).withStyle("Bold")));
- g.drawText("LM18  DRUMBUS",20,12,460,48,juce::Justification::centred);
- g.setFont(juce::Font(juce::FontOptions(15.f)));
- g.drawText("MATCH EQ  |  30 BANDS  |  REFNoise1.wav",20,65,460,26,juce::Justification::centred);
- juce::String status=processor.matched.load()?"MATCH READY":("ANALYSIS  "+juce::String(processor.analysisPercent.load())+" %");
- g.drawText(status,20,190,460,30,juce::Justification::centred);
- g.setFont(juce::Font(juce::FontOptions(13.f)));
- g.drawText("LM18  |  V0.1  |  STAGE 1",20,238,460,22,juce::Justification::centred);
+ g.setFont(juce::Font(juce::FontOptions(30.f).withStyle("Bold")));
+ g.drawText("LM18 DrumBus",25,15,480,45,juce::Justification::centredLeft);
+ g.setColour(juce::Colour(0xffa8b8ca));
+ g.setFont(juce::Font(juce::FontOptions(16.f)));
+ g.drawText("V0.2  |  GUI",1030,20,140,30,juce::Justification::centredRight);
+ auto section=[&](juce::Rectangle<int> r,const juce::String& title){
+  g.setColour(panel);g.fillRoundedRectangle(r.toFloat(),12.f);
+  g.setColour(line);g.drawRoundedRectangle(r.toFloat().reduced(1.f),12.f,1.5f);
+  g.setColour(juce::Colours::white);g.setFont(juce::Font(juce::FontOptions(20.f).withStyle("Bold")));
+  g.drawText(title,r.getX()+18,r.getY()+15,r.getWidth()-36,35,juce::Justification::left);
+ };
+ section({18,80,570,455},"MATCH EQ");
+ section({600,80,260,455},"REVERB (IR)");
+ section({872,80,310,455},"HARD CLIPPER");
+ const juce::Rectangle<float> graph(48.f,245.f,510.f,205.f);
+ g.setColour(juce::Colour(0xff0b131d));g.fillRect(graph);
+ g.setColour(juce::Colour(0xff33485a));
+ for(int i=0;i<=6;++i){
+  float y=graph.getY()+i*graph.getHeight()/6.f;
+  g.drawHorizontalLine((int)y,graph.getX(),graph.getRight());
+ }
+ for(int i=0;i<=10;++i){
+  float x=graph.getX()+i*graph.getWidth()/10.f;
+  g.drawVerticalLine((int)x,graph.getY(),graph.getBottom());
+ }
+ g.setColour(juce::Colour(0xffa8b8ca));g.setFont(juce::Font(juce::FontOptions(14.f)));
+ g.drawText("30-band response display: not yet implemented",60,310,485,40,juce::Justification::centred);
+ const juce::String status=processor.matched.load()?"MATCH READY":("ANALYSIS  "+juce::String(processor.analysisPercent.load())+" %");
+ g.setColour(line);g.drawText(status,42,470,515,28,juce::Justification::centred);
+ g.setColour(juce::Colour(0xffa8b8ca));
+ g.drawText("DRY / WET",620,145,220,30,juce::Justification::centred);
+ g.drawText("IR LENGTH  -100 ... +100",610,245,240,30,juce::Justification::centred);
+ g.drawText("Reverb DSP not implemented",610,355,240,40,juce::Justification::centred);
+ g.drawText("5 s ANALYSIS",892,145,270,30,juce::Justification::centred);
+ g.drawText("SHELF  ->  CLIP  ->  INV. SHELF",887,235,280,50,juce::Justification::centred);
+ g.drawText("CLIP REDUCTION  0 ... 6 dB",887,325,280,35,juce::Justification::centred);
+ g.drawText("Clipper DSP not implemented",887,395,280,35,juce::Justification::centred);
+ g.setColour(juce::Colour(0xffa8b8ca));g.drawText("IN / OUT METERS  -  planned",20,557,1160,40,juce::Justification::centred);
 }
 void DrumBusEditor::resized(){
- analyse.setBounds(30,110,140,40);
- enabled.setBounds(190,110,125,40);
- phase.setBounds(335,110,135,40);
+ analyse.setBounds(38,155,145,40);
+ enabled.setBounds(195,155,125,40);
+ phase.setBounds(335,155,225,40);
 }
