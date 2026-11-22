@@ -20,6 +20,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumBusProcessor::params(){
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"reverbMix",1},"Reverb Dry Wet",juce::NormalisableRange<float>(0.f,100.f,1.f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"reverbLength",1},"Reverb IR Length",juce::NormalisableRange<float>(-100.f,100.f,1.f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"reverbEnable",1},"Reverb Enabled",true));
+ p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"clipEnable",1},"Clipper Enabled",false));
+ p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"clipListen",1},"Clipper Listen",false));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"clipReduction",1},"Clip Reduction dB",juce::NormalisableRange<float>(0.f,6.f,0.1f),0.f));
  return {p.begin(),p.end()};
 }
 int DrumBusProcessor::bandForFrequency(double hz) const {
@@ -76,6 +79,18 @@ void DrumBusProcessor::prepareToPlay(double sr,int block){
  reverbMix.setCurrentAndTargetValue(0.f);
  lastReverbLength=0.f;
  eqLevelGain=1.f;
+ clipSamples=0;clipObservedPeak=0.f;clipWasListening=false;
+ clipReady.store(false);clipAnalysisPercent.store(0);
+ clipThreshold=1.f;
+ clipThresholdSmooth.reset(sr,0.05);
+ clipThresholdSmooth.setCurrentAndTargetValue(1.f);
+ auto pre=juce::dsp::IIR::Coefficients<float>::makeLowShelf(sr,300.0,0.70710678f,juce::Decibels::decibelsToGain(-24.f));
+ auto post=juce::dsp::IIR::Coefficients<float>::makeLowShelf(sr,300.0,0.70710678f,juce::Decibels::decibelsToGain(24.f));
+ for(int c=0;c<2;++c){
+  *clipPre[(size_t)c].coefficients=*pre;
+  *clipPost[(size_t)c].coefficients=*post;
+  clipPre[(size_t)c].reset();clipPost[(size_t)c].reset();
+ }
  loadScaledReverb(0.f);
  captured.clear();
  capturedCount.store(0);
@@ -169,6 +184,42 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
    }
   }
  }
+ // Clipper: analyse the actual post-reverb input for five seconds.
+ const bool clipListening=*state.getRawParameterValue("clipListen")>0.5f;
+ if(clipListening && !clipWasListening){
+  clipReady.store(false,std::memory_order_release);
+  clipSamples=0;clipObservedPeak=0.f;clipAnalysisPercent.store(0);
+ }
+ clipWasListening=clipListening;
+ const bool clipping=*state.getRawParameterValue("clipEnable")>0.5f;
+ const float reduction=juce::jlimit(0.f,6.f,*state.getRawParameterValue("clipReduction"));
+ const bool active=clipping && reduction>0.f && clipReady.load(std::memory_order_acquire);
+ // Keep pre-shelf states warm even while bypassed, to avoid a startup transient.
+ for(int i=0;i<n;++i){
+  const float a=buffer.getSample(0,i),b=buffer.getSample(1,i);
+  const float preL=clipPre[0].processSample(a);
+  const float preR=clipPre[1].processSample(b);
+  if(clipListening && !clipReady.load(std::memory_order_relaxed)){
+   clipObservedPeak=juce::jmax(clipObservedPeak,std::abs(preL),std::abs(preR));
+   if(++clipSamples>=captureSize){
+    clipThreshold=juce::jmax(1.e-6f,clipObservedPeak);
+    clipReady.store(true,std::memory_order_release);
+    clipAnalysisPercent.store(100);
+   }else if((clipSamples&1023)==0)
+    clipAnalysisPercent.store((int)(100.0*clipSamples/captureSize));
+  }
+  const float threshold=juce::jmax(1.e-6f,clipThreshold*juce::Decibels::decibelsToGain(-reduction));
+  clipThresholdSmooth.setTargetValue(threshold);
+  const float t=clipThresholdSmooth.getNextValue();
+  const float limitedL=juce::jlimit(-t,t,preL);
+  const float limitedR=juce::jlimit(-t,t,preR);
+  const float postL=clipPost[0].processSample(limitedL);
+  const float postR=clipPost[1].processSample(limitedR);
+  if(active){
+   buffer.setSample(0,i,postL);
+   buffer.setSample(1,i,postR);
+  }
+ }
 }
 void DrumBusProcessor::loadScaledReverb(float amount){
  const double factor=amount<0.f?1.0+0.006*(double)amount:1.0+0.01*(double)amount;
@@ -213,6 +264,8 @@ void DrumBusProcessor::timerCallback(){
  const float length=*state.getRawParameterValue("reverbLength");
  if(length!=lastReverbLength){loadScaledReverb(length);lastReverbLength=length;}
 
+ if(clipReady.load(std::memory_order_acquire) && *state.getRawParameterValue("clipListen")>0.5f)
+  if(auto* p=state.getParameter("clipListen"))p->setValueNotifyingHost(0.f);
  if(!readyToMatch.exchange(false)){
   const float strength=*state.getRawParameterValue("strength");
   if(matched.load(std::memory_order_acquire) && strength!=lastStrength){
@@ -223,6 +276,8 @@ void DrumBusProcessor::timerCallback(){
  }
  lastStrength=*state.getRawParameterValue("strength");
  buildMatch();
+ if(clipReady.load(std::memory_order_acquire) && *state.getRawParameterValue("clipListen")>0.5f)
+  if(auto* p=state.getParameter("clipListen"))p->setValueNotifyingHost(0.f);
  // Toggle analyse off through the host-visible parameter; next listen activation
  // should reset the capture explicitly in a later revision.
  if(auto* p=state.getParameter("listen"))p->setValueNotifyingHost(0.f);
