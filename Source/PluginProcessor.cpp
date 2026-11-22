@@ -6,9 +6,8 @@ DrumBusProcessor::DrumBusProcessor()
  :juce::AudioProcessor(BusesProperties().withInput("Input",juce::AudioChannelSet::stereo(),true).withOutput("Output",juce::AudioChannelSet::stereo(),true)),
  state(*this,nullptr,"PARAMS",params()){
  for(int k=0;k<fftSize;++k)window[k]=0.5f-0.5f*std::cos(juce::MathConstants<float>::twoPi*(float)k/(fftSize-1));
- reverb.loadImpulseResponse(BinaryData::LexRoom1_wav,(size_t)BinaryData::LexRoom1_wavSize,
-  juce::dsp::Convolution::Stereo::yes,juce::dsp::Convolution::Trim::no,
-  0,juce::dsp::Convolution::Normalise::no);
+ // The IR is loaded and amplitude-normalised in prepareToPlay.
+
  startTimerHz(10);
 }
 juce::AudioProcessorValueTreeState::ParameterLayout DrumBusProcessor::params(){
@@ -76,6 +75,8 @@ void DrumBusProcessor::prepareToPlay(double sr,int block){
  reverbMix.reset(sr,0.03);
  reverbMix.setCurrentAndTargetValue(0.f);
  lastReverbLength=0.f;
+ eqLevelGain=1.f;
+ loadScaledReverb(0.f);
  captured.clear();
  capturedCount.store(0);
  readyToMatch.store(false);
@@ -128,10 +129,26 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
 
     }
    }
+   // Match the short-term RMS of the processed EQ to its input, with a
+   // conservative +6 dB upper limit and a slow gain response.
+   double dryPower=0.0,wetPower=0.0;
+   for(int c=0;c<2;++c){
+    const auto* dry=buffer.getReadPointer(c);
+    const auto* wet=processed.getReadPointer(c);
+    for(int i=0;i<n;++i){
+     dryPower+=(double)dry[i]*dry[i];
+     wetPower+=(double)wet[i]*wet[i];
+    }
+   }
+   if(dryPower>1.e-9 && wetPower>1.e-9){
+    const float desired=juce::jlimit(0.5f,2.f,(float)std::sqrt(dryPower/wetPower));
+    const float alpha=1.f-std::exp(-(float)n/(float)(rate*0.5));
+    eqLevelGain+=alpha*(desired-eqLevelGain);
+   }
    for(int c=0;c<2;++c){
     auto* data=buffer.getWritePointer(c);
     const auto* wet=processed.getReadPointer(c);
-    for(int i=0;i<n;++i)data[i]=(1.f-blend)*data[i]+blend*wet[i]*eqOutputGain;
+    for(int i=0;i<n;++i)data[i]=(1.f-blend)*data[i]+blend*wet[i]*eqLevelGain;
    }
   }
  }
@@ -174,6 +191,19 @@ void DrumBusProcessor::loadScaledReverb(float amount){
    const int b=juce::jmin(a+1,original-1);
    out[i]=in[a]+(in[b]-in[a])*(float)(at-a);
   }
+ }
+ // Absolute-sum normalisation bounds the convolution gain for bounded input.
+ // This is intentionally conservative; no automatic peak-amplification of the IR.
+ double largestAbsSum=0.0;
+ for(int c=0;c<channels;++c){
+  double sum=0.0;
+  const float* taps=scaled.getReadPointer(c);
+  for(int i=0;i<length;++i)sum+=std::abs((double)taps[i]);
+  largestAbsSum=juce::jmax(largestAbsSum,sum);
+ }
+ if(largestAbsSum>1.e-12){
+  const float scale=(float)(0.85/largestAbsSum);
+  scaled.applyGain(scale);
  }
  reverb.loadImpulseResponse(std::move(scaled),reader->sampleRate,
   channels==2?juce::dsp::Convolution::Stereo::yes:juce::dsp::Convolution::Stereo::no,
