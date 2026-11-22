@@ -192,7 +192,7 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  }
  clipWasListening=clipListening;
  const bool clipping=*state.getRawParameterValue("clipEnable")>0.5f;
- const float reduction=juce::jlimit(0.f,6.f,*state.getRawParameterValue("clipReduction"));
+ const float reduction=juce::jlimit(0.f,6.f,state.getRawParameterValue("clipReduction")->load());
  const bool active=clipping && reduction>0.f && clipReady.load(std::memory_order_acquire);
  // Keep pre-shelf states warm even while bypassed, to avoid a startup transient.
  for(int i=0;i<n;++i){
