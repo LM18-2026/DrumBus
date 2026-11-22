@@ -35,6 +35,7 @@ private:
  static juce::AudioProcessorValueTreeState::ParameterLayout params();
  void timerCallback() override;
  void analyseReference();
+ void loadScaledReverb(float lengthControl);
  void buildMatch();
  void analyseFrame(const float* samples,std::array<double,bands>& totals);
  int bandForFrequency(double hz) const;
@@ -43,7 +44,10 @@ private:
  std::array<float,fftSize> window{},frame{};
  std::array<float,fftSize*2> fftData{};
  std::array<std::array<juce::dsp::IIR::Filter<float>,bands>,2> eq;
- juce::AudioBuffer<float> captured,processed;
+ juce::AudioBuffer<float> captured,processed,reverbBuffer;
+ juce::dsp::Convolution reverb;
+ juce::SmoothedValue<float> reverbMix;
+ float lastReverbLength=0.f;
  std::atomic<int> capturedCount{0};
  int captureSize=0;
  std::atomic<bool> readyToMatch{false};
