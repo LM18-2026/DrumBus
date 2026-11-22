@@ -32,6 +32,9 @@ public:
  std::atomic<bool> matched{false};
  std::atomic<int> clipAnalysisPercent{0};
  std::atomic<bool> clipReady{false};
+ static constexpr int eqDisplayPoints=160;
+ using EqResponse=std::array<float,eqDisplayPoints>;
+ bool getEqResponse(EqResponse& response);
 private:
  static constexpr int bands=30,fftOrder=12,fftSize=1<<fftOrder;
  static juce::AudioProcessorValueTreeState::ParameterLayout params();
