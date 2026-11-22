@@ -6,6 +6,9 @@ DrumBusProcessor::DrumBusProcessor()
  :juce::AudioProcessor(BusesProperties().withInput("Input",juce::AudioChannelSet::stereo(),true).withOutput("Output",juce::AudioChannelSet::stereo(),true)),
  state(*this,nullptr,"PARAMS",params()){
  for(int k=0;k<fftSize;++k)window[k]=0.5f-0.5f*std::cos(juce::MathConstants<float>::twoPi*(float)k/(fftSize-1));
+ reverb.loadImpulseResponse(BinaryData::LexRoom1_wav,(size_t)BinaryData::LexRoom1_wavSize,
+  juce::dsp::Convolution::Stereo::yes,juce::dsp::Convolution::Trim::no,
+  0,juce::dsp::Convolution::Normalise::no);
  startTimerHz(10);
 }
 juce::AudioProcessorValueTreeState::ParameterLayout DrumBusProcessor::params(){
@@ -15,6 +18,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumBusProcessor::params(){
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"enable",1},"Match EQ",true));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"blend",1},"EQ Blend",juce::NormalisableRange<float>(0.f,100.f,1.f),100.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"strength",1},"Match Depth",juce::NormalisableRange<float>(0.f,100.f,1.f),35.f));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"reverbMix",1},"Reverb Dry Wet",juce::NormalisableRange<float>(0.f,100.f,1.f),0.f));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"reverbLength",1},"Reverb IR Length",juce::NormalisableRange<float>(-100.f,100.f,1.f),0.f));
+ p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"reverbEnable",1},"Reverb Enabled",true));
  return {p.begin(),p.end()};
 }
 int DrumBusProcessor::bandForFrequency(double hz) const {
@@ -65,6 +71,11 @@ void DrumBusProcessor::prepareToPlay(double sr,int block){
  captureSize=(int)std::ceil(sr*5.0);
  captured.setSize(1,captureSize);
  processed.setSize(2,juce::jmax(1,block));
+ reverbBuffer.setSize(2,juce::jmax(1,block));
+ reverb.prepare({sr,(juce::uint32)juce::jmax(1,block),2});
+ reverbMix.reset(sr,0.03);
+ reverbMix.setCurrentAndTargetValue(0.f);
+ lastReverbLength=0.f;
  captured.clear();
  capturedCount.store(0);
  readyToMatch.store(false);
@@ -124,8 +135,53 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
    }
   }
  }
+ // Feed convolution every block to preserve tails and continuity.
+ if(n<=reverbBuffer.getNumSamples()){
+  for(int c=0;c<2;++c)reverbBuffer.copyFrom(c,0,buffer,c,0,n);
+  juce::dsp::AudioBlock<float> wetBlock(reverbBuffer);
+  juce::dsp::ProcessContextReplacing<float> wetContext(wetBlock.getSubBlock(0,(size_t)n));
+  reverb.process(wetContext);
+  const bool enabled=*state.getRawParameterValue("reverbEnable")>0.5f;
+  reverbMix.setTargetValue(enabled?*state.getRawParameterValue("reverbMix")/100.f:0.f);
+  for(int i=0;i<n;++i){
+   const float w=reverbMix.getNextValue(),d=1.f-w;
+   for(int c=0;c<2;++c){
+    auto* dst=buffer.getWritePointer(c);
+    dst[i]=d*dst[i]+w*reverbBuffer.getSample(c,i);
+   }
+  }
+ }
+}
+void DrumBusProcessor::loadScaledReverb(float amount){
+ const double factor=amount<0.f?1.0+0.006*(double)amount:1.0+0.01*(double)amount;
+ juce::WavAudioFormat wav;
+ auto stream=std::make_unique<juce::MemoryInputStream>(BinaryData::LexRoom1_wav,(size_t)BinaryData::LexRoom1_wavSize,false);
+ std::unique_ptr<juce::AudioFormatReader> reader(wav.createReaderFor(stream.release(),true));
+ if(!reader||reader->lengthInSamples<2||reader->numChannels<1)return;
+ const int original=(int)reader->lengthInSamples;
+ const int channels=juce::jmin(2,(int)reader->numChannels);
+ juce::AudioBuffer<float> source(channels,original);
+ if(!reader->read(&source,0,original,0,true,true))return;
+ const int length=juce::jmax(2,(int)std::lround(original*factor));
+ juce::AudioBuffer<float> scaled(channels,length);
+ for(int c=0;c<channels;++c){
+  const float* in=source.getReadPointer(c);
+  float* out=scaled.getWritePointer(c);
+  for(int i=0;i<length;++i){
+   const double at=(double)i/factor;
+   const int a=juce::jlimit(0,original-1,(int)at);
+   const int b=juce::jmin(a+1,original-1);
+   out[i]=in[a]+(in[b]-in[a])*(float)(at-a);
+  }
+ }
+ reverb.loadImpulseResponse(std::move(scaled),reader->sampleRate,
+  channels==2?juce::dsp::Convolution::Stereo::yes:juce::dsp::Convolution::Stereo::no,
+  juce::dsp::Convolution::Trim::no,juce::dsp::Convolution::Normalise::no);
 }
 void DrumBusProcessor::timerCallback(){
+ const float length=*state.getRawParameterValue("reverbLength");
+ if(length!=lastReverbLength){loadScaledReverb(length);lastReverbLength=length;}
+
  if(!readyToMatch.exchange(false)){
   const float strength=*state.getRawParameterValue("strength");
   if(matched.load(std::memory_order_acquire) && strength!=lastStrength){
