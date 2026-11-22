@@ -32,6 +32,8 @@ public:
  std::atomic<bool> matched{false};
  std::atomic<int> clipAnalysisPercent{0};
  std::atomic<bool> clipReady{false};
+ std::atomic<bool> clipCaptureComplete{false};
+ std::atomic<float> clipMakeup{1.f};
  static constexpr int eqDisplayPoints=160;
  using EqResponse=std::array<float,eqDisplayPoints>;
  bool getEqResponse(EqResponse& response);
@@ -42,6 +44,7 @@ private:
  void analyseReference();
  void loadScaledReverb(float lengthControl);
  void buildMatch();
+ void calibrateClipper();
  void analyseFrame(const float* samples,std::array<double,bands>& totals);
  int bandForFrequency(double hz) const;
  juce::dsp::FFT fft{fftOrder};
@@ -49,7 +52,7 @@ private:
  std::array<float,fftSize> window{},frame{};
  std::array<float,fftSize*2> fftData{};
  std::array<std::array<juce::dsp::IIR::Filter<float>,bands>,2> eq;
- juce::AudioBuffer<float> captured,processed,reverbBuffer;
+ juce::AudioBuffer<float> captured,processed,reverbBuffer,clipCapturedPre,clipCapturedOriginal;
  juce::dsp::Convolution reverb;
  juce::SmoothedValue<float> reverbMix;
  float lastReverbLength=0.f;
@@ -57,6 +60,8 @@ private:
  std::array<juce::dsp::IIR::Filter<float>,2> clipPre,clipPost,clipPostClean;
  float clipThreshold=1.f;
  float clipObservedPeak=0.f;
+ float clipOriginalPeak=0.f;
+ float clipCalibratedReduction=-1.f;
  int clipSamples=0;
  bool clipWasListening=false;
  juce::SmoothedValue<float> clipThresholdSmooth;
