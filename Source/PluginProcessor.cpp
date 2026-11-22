@@ -14,6 +14,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumBusProcessor::params(){
  p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"phase",1},"Phase",juce::StringArray{"MinPhase","LinPhase"},0));
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"enable",1},"Match EQ",true));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"blend",1},"EQ Blend",juce::NormalisableRange<float>(0.f,100.f,1.f),100.f));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"strength",1},"Match Depth",juce::NormalisableRange<float>(0.f,100.f,1.f),35.f));
  return {p.begin(),p.end()};
 }
 int DrumBusProcessor::bandForFrequency(double hz) const {
@@ -70,6 +71,7 @@ void DrumBusProcessor::prepareToPlay(double sr,int block){
  matched.store(false);
  analysisPercent.store(0);
  wasListening=false;
+ lastStrength=*state.getRawParameterValue("strength");
  for(auto& channel:eq)for(auto& filter:channel)filter.reset();
  analyseReference();
 }
@@ -124,7 +126,15 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  }
 }
 void DrumBusProcessor::timerCallback(){
- if(!readyToMatch.exchange(false))return;
+ if(!readyToMatch.exchange(false)){
+  const float strength=*state.getRawParameterValue("strength");
+  if(matched.load(std::memory_order_acquire) && strength!=lastStrength){
+   lastStrength=strength;
+   buildMatch();
+  }
+  return;
+ }
+ lastStrength=*state.getRawParameterValue("strength");
  buildMatch();
  // Toggle analyse off through the host-visible parameter; next listen activation
  // should reset the capture explicitly in a later revision.
@@ -167,9 +177,9 @@ void DrumBusProcessor::buildMatch(){
     weights+=w;
    }
   }
-  // Conservative matching strength for the first stable audio test.
-  // +/-30 dB remains the design range; avoid applying it at full strength yet.
-  gains[(size_t)b]=juce::jlimit(-12.f,12.f,(float)(0.35*weighted/weights));
+  // User-controlled match depth: default 35% reproduces V0.6 except where V0.6 capped at 12 dB.
+  const float depth=juce::jlimit(0.f,1.f,*state.getRawParameterValue("strength")/100.f);
+  gains[(size_t)b]=juce::jlimit(-30.f,30.f,(float)(depth*weighted/weights));
  }
  // Do not subtract the largest narrow-band boost from the entire signal.
  // Keep unity output trim; the host must retain sufficient headroom.
