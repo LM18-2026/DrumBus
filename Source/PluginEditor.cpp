@@ -33,6 +33,7 @@ DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p)
 
  enableAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"enable",enabled);
  phaseAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.state,"phase",phase);
+ processor.getEqResponse(responseCurve);
  startTimerHz(10);
 }
 void DrumBusEditor::paint(juce::Graphics& g){
@@ -43,7 +44,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("LM18 DrumBus",25,15,480,45,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));
  g.setFont(juce::Font(juce::FontOptions(16.f)));
- g.drawText("V0.12  |  GUI",1030,20,140,30,juce::Justification::centredRight);
+ g.drawText("V0.13  |  GUI",1030,20,140,30,juce::Justification::centredRight);
  auto section=[&](juce::Rectangle<int> r,const juce::String& title){
   g.setColour(panel);g.fillRoundedRectangle(r.toFloat(),12.f);
   g.setColour(line);g.drawRoundedRectangle(r.toFloat().reduced(1.f),12.f,1.5f);
@@ -65,7 +66,26 @@ void DrumBusEditor::paint(juce::Graphics& g){
   g.drawVerticalLine((int)x,graph.getY(),graph.getBottom());
  }
  g.setColour(juce::Colour(0xffa8b8ca));g.setFont(juce::Font(juce::FontOptions(14.f)));
- g.drawText("30-band response display: not yet implemented",60,310,485,40,juce::Justification::centred);
+ // Calculated frequency response of the actual cascaded EQ filters.
+ // Display spans 20 Hz to 20 kHz and -30 to +30 dB.
+ g.setColour(juce::Colour(0xff53677a));
+ g.drawHorizontalLine((int)graph.getCentreY(),graph.getX(),graph.getRight());
+ juce::Path curve;
+ for(size_t i=0;i<responseCurve.size();++i){
+  const float x=graph.getX()+graph.getWidth()*(float)i/(float)(responseCurve.size()-1);
+  const float db=juce::jlimit(-30.f,30.f,responseCurve[i]);
+  const float y=graph.getCentreY()-db*graph.getHeight()/60.f;
+  if(i==0)curve.startNewSubPath(x,y);else curve.lineTo(x,y);
+ }
+ g.setColour(line);
+ g.strokePath(curve,juce::PathStrokeType(2.f));
+ g.setColour(juce::Colour(0xffa8b8ca));
+ g.drawText("+30 dB",50,247,75,18,juce::Justification::left);
+ g.drawText("0 dB",50,335,75,18,juce::Justification::left);
+ g.drawText("-30 dB",50,428,75,18,juce::Justification::left);
+ g.drawText("20 Hz",48,450,65,18,juce::Justification::left);
+ g.drawText("1 kHz",293,450,65,18,juce::Justification::centred);
+ g.drawText("20 kHz",490,450,68,18,juce::Justification::right);
  const juce::String status=processor.matched.load()?"MATCH READY":("ANALYSIS  "+juce::String(processor.analysisPercent.load())+" %");
  g.setColour(juce::Colours::white);g.drawText("MATCH DEPTH",40,208,125,25,juce::Justification::centredLeft);
  g.setColour(line);g.drawText(status,42,456,515,25,juce::Justification::centred);
@@ -77,7 +97,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("Room: LexRoom1.wav",610,407,240,32,juce::Justification::centred);
  g.drawText("5 s PEAK ANALYSIS",892,145,270,30,juce::Justification::centred);
  g.drawText("SHELF  ->  CLIP  ->  INV. SHELF",887,235,280,50,juce::Justification::centred);
- g.drawText("CLIP REDUCTION (dB)",887,325,280,35,juce::Justification::centred);
+ g.drawText("CLIP REDUCTION 0–12 dB",887,325,280,35,juce::Justification::centred);
  g.drawText(processor.clipReady.load()?"CLIP READY":("ANALYSIS  "+juce::String(processor.clipAnalysisPercent.load())+" %"),887,410,280,35,juce::Justification::centred);
  g.setColour(juce::Colour(0xffa8b8ca));g.drawText("IN / OUT METERS  -  planned",20,557,1160,40,juce::Justification::centred);
 }
