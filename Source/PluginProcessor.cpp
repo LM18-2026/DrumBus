@@ -26,17 +26,18 @@ void DrumBusProcessor::analyseFrame(const float* samples,std::array<double,bands
  for(int i=0;i<fftSize;++i)fftData[i]=samples[i]*window[i];
  fft.performRealOnlyForwardTransform(fftData.data());
  std::array<int,bands> binCount{};
+ std::array<double,bands> framePower{};
  for(int i=1;i<fftSize/2;++i){
   int b=bandForFrequency(i*rate/fftSize);
   if(b>=0){
    const double re=fftData[2*i],im=fftData[2*i+1];
-   totals[(size_t)b]+=(re*re+im*im);
+   framePower[(size_t)b]+=(re*re+im*im);
    ++binCount[(size_t)b];
   }
  }
  // Average spectral power per FFT bin, not summed band energy.
  for(int b=0;b<bands;++b)if(binCount[(size_t)b]>0)
-  totals[(size_t)b]/=binCount[(size_t)b];
+  totals[(size_t)b]+=framePower[(size_t)b]/binCount[(size_t)b];
 }
 void DrumBusProcessor::analyseReference(){
  juce::WavAudioFormat wav;
@@ -170,9 +171,9 @@ void DrumBusProcessor::buildMatch(){
  }
  // Remove a broad residual tilt bias to avoid systematic brightening.
  // Overall headroom is applied before any positive EQ gains reach the output.
- double maxBoost=0.0;
- for(float g:gains)maxBoost+=juce::jmax(0.f,g);
- const float newOutputGain=juce::Decibels::decibelsToGain((float)-maxBoost);
+ float maxBoost=0.f;
+ for(float g:gains)maxBoost=juce::jmax(maxBoost,g);
+ const float newOutputGain=juce::Decibels::decibelsToGain(-maxBoost);
  juce::SpinLock::ScopedLockType lock(eqLock);
  for(int b=0;b<bands;++b){
   const double f=25.0*std::pow(20000.0/25.0,(b+0.5)/(double)bands);
