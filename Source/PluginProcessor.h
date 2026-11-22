@@ -48,6 +48,7 @@ private:
  int captureSize=0;
  std::atomic<bool> readyToMatch{false};
  float eqOutputGain=1.f;
+ float lastStrength=35.f;
  bool wasListening=false;
  juce::SpinLock eqLock;
  double rate=48000.0;
