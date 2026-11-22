@@ -44,7 +44,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("LM18 DrumBus",25,15,480,45,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));
  g.setFont(juce::Font(juce::FontOptions(16.f)));
- g.drawText("V0.13  |  GUI",1030,20,140,30,juce::Justification::centredRight);
+ g.drawText("V0.14  |  GUI",1030,20,140,30,juce::Justification::centredRight);
  auto section=[&](juce::Rectangle<int> r,const juce::String& title){
   g.setColour(panel);g.fillRoundedRectangle(r.toFloat(),12.f);
   g.setColour(line);g.drawRoundedRectangle(r.toFloat().reduced(1.f),12.f,1.5f);
@@ -97,7 +97,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("Room: LexRoom1.wav",610,407,240,32,juce::Justification::centred);
  g.drawText("5 s PEAK ANALYSIS",892,145,270,30,juce::Justification::centred);
  g.drawText("SHELF  ->  CLIP  ->  INV. SHELF",887,235,280,50,juce::Justification::centred);
- g.drawText("CLIP REDUCTION 0–12 dB",887,325,280,35,juce::Justification::centred);
+ g.drawText("CLIP REDUCTION 0 - 12 dB",887,325,280,35,juce::Justification::centred);
  g.drawText(processor.clipReady.load()?"CLIP READY":("ANALYSIS  "+juce::String(processor.clipAnalysisPercent.load())+" %"),887,410,280,35,juce::Justification::centred);
  g.setColour(juce::Colour(0xffa8b8ca));g.drawText("IN / OUT METERS  -  planned",20,557,1160,40,juce::Justification::centred);
 }
