@@ -53,10 +53,11 @@ void DrumBusProcessor::analyseReference(){
  }
  for(int b=0;b<bands;++b)reference[b]=sums[b]/juce::jmax(1,frames);
 }
-void DrumBusProcessor::prepareToPlay(double sr,int){
+void DrumBusProcessor::prepareToPlay(double sr,int block){
  rate=sr;
  captureSize=(int)std::ceil(sr*5.0);
  captured.setSize(1,captureSize);
+ processed.setSize(2,juce::jmax(1,block));
  captured.clear();
  capturedCount.store(0);
  readyToMatch.store(false);
@@ -102,7 +103,7 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
     for(int i=0;i<n;++i)inputPeak=juce::jmax(inputPeak,std::abs(data[i]));
    }
    // Process into a scratch copy: do not alter the original until the peak guard is known.
-   juce::AudioBuffer<float> processed(2,n);
+   if(n>processed.getNumSamples())return;
    for(int c=0;c<2;++c){
     auto* data=buffer.getReadPointer(c);
     auto* dest=processed.getWritePointer(c);
