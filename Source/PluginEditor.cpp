@@ -45,7 +45,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("LM18 DrumBus",25,15,480,45,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));
  g.setFont(juce::Font(juce::FontOptions(16.f)));
- g.drawText("V0.17  |  GUI",1030,20,140,30,juce::Justification::centredRight);
+ g.drawText("V0.18  |  GUI",1030,20,140,30,juce::Justification::centredRight);
  auto section=[&](juce::Rectangle<int> r,const juce::String& title){
   g.setColour(panel);g.fillRoundedRectangle(r.toFloat(),12.f);
   g.setColour(line);g.drawRoundedRectangle(r.toFloat().reduced(1.f),12.f,1.5f);
@@ -55,7 +55,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  section({18,80,570,455},"MATCH EQ");
  section({600,80,260,455},"REVERB / AMBIENCE");
  section({872,80,310,455},"HARD CLIPPER");
- const juce::Rectangle<float> graph(48.f,245.f,510.f,205.f);
+ const juce::Rectangle<float> graph(48.f,245.f,510.f,180.f);
  g.setColour(juce::Colour(0xff0b131d));g.fillRect(graph);
  g.setColour(juce::Colour(0xff33485a));
  for(int i=0;i<=6;++i){
@@ -83,13 +83,13 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.setColour(juce::Colour(0xffa8b8ca));
  g.drawText("+30 dB",50,247,75,18,juce::Justification::left);
  g.drawText("0 dB",50,335,75,18,juce::Justification::left);
- g.drawText("-30 dB",50,428,75,18,juce::Justification::left);
- g.drawText("20 Hz",48,450,65,18,juce::Justification::left);
- g.drawText("1 kHz",293,450,65,18,juce::Justification::centred);
- g.drawText("20 kHz",490,450,68,18,juce::Justification::right);
+ g.drawText("-30 dB",50,404,75,18,juce::Justification::left);
+ g.drawText("20 Hz",48,430,65,18,juce::Justification::left);
+ g.drawText("1 kHz",293,430,65,18,juce::Justification::centred);
+ g.drawText("20 kHz",490,430,68,18,juce::Justification::right);
  const juce::String status=processor.matched.load()?"MATCH READY":("ANALYSIS  "+juce::String(processor.analysisPercent.load())+" %");
  g.setColour(juce::Colours::white);g.drawText("MATCH DEPTH",40,208,125,25,juce::Justification::centredLeft);
- g.setColour(line);g.drawText(status,42,456,515,25,juce::Justification::centred);
+ g.setColour(line);g.drawText(status,42,118,300,25,juce::Justification::centred);
  g.setColour(juce::Colours::white);g.drawText("EQ BLEND",40,495,110,25,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));
  g.drawText("REVERB BLEND",612,172,116,25,juce::Justification::centred);
@@ -106,12 +106,12 @@ void DrumBusEditor::resized(){
  analyse.setBounds(38,155,145,40);
  blend.setBounds(155,492,390,35);
  depth.setBounds(170,203,375,35);
- enabled.setBounds(195,155,125,40);
+ enabled.setBounds(440,455,125,30);
  phase.setBounds(335,155,225,40);
  reverbWet.setBounds(612,210,116,125);
  reverbLength.setBounds(734,210,116,125);
- reverbEnabled.setBounds(640,465,170,38);
+ reverbEnabled.setBounds(668,455,125,30);
  clipListen.setBounds(900,185,245,38);
  clipReduction.setBounds(975,365,100,38);
- clipEnabled.setBounds(930,468,180,38);
+ clipEnabled.setBounds(964,455,125,30);
 }
