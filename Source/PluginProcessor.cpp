@@ -162,10 +162,10 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
   const bool enabled=*state.getRawParameterValue("reverbEnable")>0.5f;
   reverbMix.setTargetValue(enabled?*state.getRawParameterValue("reverbMix")/100.f:0.f);
   for(int i=0;i<n;++i){
-   const float w=reverbMix.getNextValue(),d=1.f-w;
+   const float w=reverbMix.getNextValue();
    for(int c=0;c<2;++c){
     auto* dst=buffer.getWritePointer(c);
-    dst[i]=d*dst[i]+w*reverbBuffer.getSample(c,i);
+    dst[i]+=w*reverbBuffer.getSample(c,i);
    }
   }
  }
@@ -192,17 +192,17 @@ void DrumBusProcessor::loadScaledReverb(float amount){
    out[i]=in[a]+(in[b]-in[a])*(float)(at-a);
   }
  }
- // Absolute-sum normalisation bounds the convolution gain for bounded input.
- // This is intentionally conservative; no automatic peak-amplification of the IR.
- double largestAbsSum=0.0;
+ // Normalize the IR by its L2 energy instead of the sum of absolute taps.
+ // The 0.35 target is deliberately conservative and limits excessive wet level.
+ double maxEnergy=0.0;
  for(int c=0;c<channels;++c){
-  double sum=0.0;
+  double energy=0.0;
   const float* taps=scaled.getReadPointer(c);
-  for(int i=0;i<length;++i)sum+=std::abs((double)taps[i]);
-  largestAbsSum=juce::jmax(largestAbsSum,sum);
+  for(int i=0;i<length;++i)energy+=(double)taps[i]*(double)taps[i];
+  maxEnergy=juce::jmax(maxEnergy,energy);
  }
- if(largestAbsSum>1.e-12){
-  const float scale=(float)(0.85/largestAbsSum);
+ if(maxEnergy>1.e-18){
+  const float scale=(float)juce::jmin(4.0,0.35/std::sqrt(maxEnergy));
   scaled.applyGain(scale);
  }
  reverb.loadImpulseResponse(std::move(scaled),reader->sampleRate,
