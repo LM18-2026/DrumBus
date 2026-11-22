@@ -30,6 +30,8 @@ public:
  juce::AudioProcessorValueTreeState state;
  std::atomic<int> analysisPercent{0};
  std::atomic<bool> matched{false};
+ std::atomic<int> clipAnalysisPercent{0};
+ std::atomic<bool> clipReady{false};
 private:
  static constexpr int bands=30,fftOrder=12,fftSize=1<<fftOrder;
  static juce::AudioProcessorValueTreeState::ParameterLayout params();
@@ -49,6 +51,12 @@ private:
  juce::SmoothedValue<float> reverbMix;
  float lastReverbLength=0.f;
  float eqLevelGain=1.f;
+ std::array<juce::dsp::IIR::Filter<float>,2> clipPre,clipPost;
+ float clipThreshold=1.f;
+ float clipObservedPeak=0.f;
+ int clipSamples=0;
+ bool clipWasListening=false;
+ juce::SmoothedValue<float> clipThresholdSmooth;
  std::atomic<int> capturedCount{0};
  int captureSize=0;
  std::atomic<bool> readyToMatch{false};
