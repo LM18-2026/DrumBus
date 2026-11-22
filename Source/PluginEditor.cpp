@@ -2,8 +2,9 @@
 DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p),processor(p){
  setSize(1200,620);
  addAndMakeVisible(analyse);addAndMakeVisible(enabled);addAndMakeVisible(phase);addAndMakeVisible(blend);addAndMakeVisible(depth);addAndMakeVisible(reverbWet);addAndMakeVisible(reverbLength);addAndMakeVisible(reverbEnabled);addAndMakeVisible(clipEnabled);addAndMakeVisible(clipListen);addAndMakeVisible(clipReduction);
- clipReduction.setSliderStyle(juce::Slider::LinearHorizontal);
- clipReduction.setTextBoxStyle(juce::Slider::TextBoxRight,false,70,24);
+ // LinearBar is an editable numeric field with host automation support.
+ clipReduction.setSliderStyle(juce::Slider::LinearBar);
+ clipReduction.setTextBoxStyle(juce::Slider::TextBoxLeft,false,90,30);
  clipReduction.setNumDecimalPlacesToDisplay(1);
  clipReductionAttachment=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,"clipReduction",clipReduction);
  clipEnableAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"clipEnable",clipEnabled);
@@ -44,7 +45,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("LM18 DrumBus",25,15,480,45,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));
  g.setFont(juce::Font(juce::FontOptions(16.f)));
- g.drawText("V0.15  |  GUI",1030,20,140,30,juce::Justification::centredRight);
+ g.drawText("V0.16  |  GUI",1030,20,140,30,juce::Justification::centredRight);
  auto section=[&](juce::Rectangle<int> r,const juce::String& title){
   g.setColour(panel);g.fillRoundedRectangle(r.toFloat(),12.f);
   g.setColour(line);g.drawRoundedRectangle(r.toFloat().reduced(1.f),12.f,1.5f);
@@ -97,7 +98,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("Room: LexRoom1.wav",610,407,240,32,juce::Justification::centred);
  g.drawText("5 s PEAK ANALYSIS",892,145,270,30,juce::Justification::centred);
  g.drawText("SHELF  ->  CLIP  ->  INV. SHELF",887,235,280,50,juce::Justification::centred);
- g.drawText("CLIP REDUCTION 0 - 12 dB",887,325,280,35,juce::Justification::centred);
+ g.drawText("CLIP REDUCTION (dB)",887,325,280,35,juce::Justification::centred);
  g.drawText(processor.clipReady.load()?"CLIP READY":("ANALYSIS  "+juce::String(processor.clipAnalysisPercent.load())+" %"),887,410,280,35,juce::Justification::centred);
  g.setColour(juce::Colour(0xffa8b8ca));g.drawText("IN / OUT METERS  -  planned",20,557,1160,40,juce::Justification::centred);
 }
@@ -111,6 +112,6 @@ void DrumBusEditor::resized(){
  reverbLength.setBounds(734,210,116,125);
  reverbEnabled.setBounds(640,465,170,38);
  clipListen.setBounds(900,185,245,38);
- clipReduction.setBounds(898,365,245,38);
+ clipReduction.setBounds(975,365,100,38);
  clipEnabled.setBounds(930,468,180,38);
 }
