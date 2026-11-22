@@ -47,6 +47,8 @@ private:
  std::atomic<int> capturedCount{0};
  int captureSize=0;
  std::atomic<bool> readyToMatch{false};
+ bool wasListening=false;
+ juce::SpinLock eqLock;
  double rate=48000.0;
  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumBusProcessor)
 };
