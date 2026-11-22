@@ -185,7 +185,7 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
    }
   }
  }
- // Clipper: analyse the actual post-reverb input for five seconds.
+ // Clipper: analyse the bass-attenuated post-reverb signal for five seconds.
  const bool clipListening=*state.getRawParameterValue("clipListen")>0.5f;
  if(clipListening && !clipWasListening){
   clipReady.store(false,std::memory_order_release);
@@ -217,14 +217,15 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
   const float limitedR=juce::jlimit(-t,t,preR);
   const float postL=clipPost[0].processSample(limitedL);
   const float postR=clipPost[1].processSample(limitedR);
-  // Parallel inverse shelf without clipping provides a clean reference.
-  // Apply makeup to the clipping DIFFERENCE only; do not boost the bass.
-  const float cleanL=clipPostClean[0].processSample(preL);
-  const float cleanR=clipPostClean[1].processSample(preR);
+  // Keep the parallel inverse shelf updated for smooth state continuity.
+  clipPostClean[0].processSample(preL);
+  clipPostClean[1].processSample(preR);
   if(active){
+   // Clip only the bass-attenuated path. Restore bass with the inverse
+   // shelf, then raise the complete output by the selected reduction.
    const float makeup=juce::Decibels::decibelsToGain(reduction);
-   buffer.setSample(0,i,a+makeup*(postL-cleanL));
-   buffer.setSample(1,i,b+makeup*(postR-cleanR));
+   buffer.setSample(0,i,postL*makeup);
+   buffer.setSample(1,i,postR*makeup);
   }
  }
 }
