@@ -54,7 +54,7 @@ private:
  juce::SmoothedValue<float> reverbMix;
  float lastReverbLength=0.f;
  float eqLevelGain=1.f;
- std::array<juce::dsp::IIR::Filter<float>,2> clipPre,clipPost;
+ std::array<juce::dsp::IIR::Filter<float>,2> clipPre,clipPost,clipPostClean;
  float clipThreshold=1.f;
  float clipObservedPeak=0.f;
  int clipSamples=0;
