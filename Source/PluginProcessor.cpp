@@ -89,7 +89,8 @@ void DrumBusProcessor::prepareToPlay(double sr,int block){
  for(int c=0;c<2;++c){
   *clipPre[(size_t)c].coefficients=*pre;
   *clipPost[(size_t)c].coefficients=*post;
-  clipPre[(size_t)c].reset();clipPost[(size_t)c].reset();
+  *clipPostClean[(size_t)c].coefficients=*post;
+  clipPre[(size_t)c].reset();clipPost[(size_t)c].reset();clipPostClean[(size_t)c].reset();
  }
  loadScaledReverb(0.f);
  captured.clear();
@@ -200,9 +201,8 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
   const float preL=clipPre[0].processSample(a);
   const float preR=clipPre[1].processSample(b);
   if(clipListening && !clipReady.load(std::memory_order_relaxed)){
-   // Measure the unfiltered post-reverb input peak: the user-facing
-   // reduction is defined in the same domain as the final plugin output.
-   clipObservedPeak=juce::jmax(clipObservedPeak,std::abs(a),std::abs(b));
+   // Analyse the bass-attenuated signal actually entering the clipper.
+   clipObservedPeak=juce::jmax(clipObservedPeak,std::abs(preL),std::abs(preR));
    if(++clipSamples>=captureSize){
     clipThreshold=juce::jmax(1.e-6f,clipObservedPeak);
     clipReady.store(true,std::memory_order_release);
@@ -217,14 +217,14 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
   const float limitedR=juce::jlimit(-t,t,preR);
   const float postL=clipPost[0].processSample(limitedL);
   const float postR=clipPost[1].processSample(limitedR);
+  // Parallel inverse shelf without clipping provides a clean reference.
+  // Apply makeup to the clipping DIFFERENCE only; do not boost the bass.
+  const float cleanL=clipPostClean[0].processSample(preL);
+  const float cleanR=clipPostClean[1].processSample(preR);
   if(active){
-   // The inverse low shelf can restore peaks above the clipping threshold.
-   // Enforce the user-requested ceiling in the actual output domain.
-   const float ceiling=juce::jmax(1.e-6f,clipThreshold*juce::Decibels::decibelsToGain(-reduction));
-   // Apply makeup AFTER the final hard ceiling; output peak remains at or below the analysed peak.
    const float makeup=juce::Decibels::decibelsToGain(reduction);
-   buffer.setSample(0,i,juce::jlimit(-ceiling,ceiling,postL)*makeup);
-   buffer.setSample(1,i,juce::jlimit(-ceiling,ceiling,postR)*makeup);
+   buffer.setSample(0,i,a+makeup*(postL-cleanL));
+   buffer.setSample(1,i,b+makeup*(postR-cleanR));
   }
  }
 }
