@@ -83,6 +83,8 @@ void DrumBusProcessor::prepareToPlay(double sr,int block){
  eqLevelGain=1.f;
  rmsInputSum=rmsOutputSum=0.0;rmsSamples=0;rmsTrim=1.f;
  rmsTrimSmooth.reset(sr,0.15);rmsTrimSmooth.setCurrentAndTargetValue(1.f);
+ phaseGainSmooth.reset(sr,0.15);phaseGainSmooth.setCurrentAndTargetValue(1.f);
+ previousPhase=(int)state.getRawParameterValue("phase")->load();phaseMeasureSamples=0;phaseInputPower=phaseOutputPower=0.0;phaseCompensation=1.f;
  firPosition=0;dryPosition=0;
  for(auto& c:firHistory)c.fill(0.f);
  for(auto& c:dryDelay)c.fill(0.f);
@@ -119,6 +121,13 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  const int n=buffer.getNumSamples();
  if(buffer.getNumChannels()<2)return;
  const bool listening=*state.getRawParameterValue("listen")>0.5f;
+ const int currentPhase=(int)state.getRawParameterValue("phase")->load();
+ if(currentPhase!=previousPhase){previousPhase=currentPhase;phaseMeasureSamples=0;phaseInputPower=phaseOutputPower=0.0;phaseCompensation=1.f;phaseGainSmooth.setTargetValue(1.f);}
+ double inputPowerBlock=0.0,inputPeakBlock=0.0;
+ for(int c=0;c<2;++c){const auto* d=buffer.getReadPointer(c);for(int i=0;i<n;++i){inputPowerBlock+=(double)d[i]*d[i];inputPeakBlock=juce::jmax(inputPeakBlock,(double)std::abs(d[i]));}}
+ const double inputRmsBlock=std::sqrt(inputPowerBlock/juce::jmax(1,2*n));
+ inputPeakDb.store(juce::Decibels::gainToDecibels((float)inputPeakBlock,-100.f));
+ inputRmsDb.store(juce::Decibels::gainToDecibels((float)inputRmsBlock,-100.f));
  if(listening && !wasListening){
   // A new session always discards the previous EQ before recording.
   matched.store(false,std::memory_order_release);
@@ -253,6 +262,18 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
    buffer.setSample(1,i,postR*makeup);
   }
  }
+ // Phase-mode switch: estimate output/input power over one second.
+ // This compensates mode-dependent level shifts without modifying the clipper calibration.
+ if(phaseMeasureSamples<(int)rate){
+  const int count=juce::jmin(n,(int)rate-phaseMeasureSamples);
+  for(int c=0;c<2;++c){const auto* d=buffer.getReadPointer(c);for(int i=0;i<count;++i)phaseOutputPower+=(double)d[i]*d[i];}
+  phaseInputPower+=inputPowerBlock*((double)count/juce::jmax(1,n));
+  phaseMeasureSamples+=count;
+  if(phaseMeasureSamples>=(int)rate && phaseInputPower>1.e-10 && phaseOutputPower>1.e-10){
+   phaseCompensation=juce::jlimit(0.25f,4.f,(float)std::sqrt(phaseInputPower/phaseOutputPower));
+   phaseGainSmooth.setTargetValue(phaseCompensation);
+  }
+ }
  // Compare the same five-second input window with the complete DSP output.
  if(listening && rmsSamples<captureSize){
   const int count=juce::jmin(n,captureSize-rmsSamples);
@@ -264,9 +285,13 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
   }
  }
  for(int i=0;i<n;++i){
-  const float gain=rmsTrimSmooth.getNextValue();
+  const float gain=rmsTrimSmooth.getNextValue()*phaseGainSmooth.getNextValue();
   for(int c=0;c<2;++c)buffer.setSample(c,i,buffer.getSample(c,i)*gain);
  }
+ double outputPowerBlock=0.0,outputPeakBlock=0.0;
+ for(int c=0;c<2;++c){const auto* d=buffer.getReadPointer(c);for(int i=0;i<n;++i){outputPowerBlock+=(double)d[i]*d[i];outputPeakBlock=juce::jmax(outputPeakBlock,(double)std::abs(d[i]));}}
+ outputPeakDb.store(juce::Decibels::gainToDecibels((float)outputPeakBlock,-100.f));
+ outputRmsDb.store(juce::Decibels::gainToDecibels((float)std::sqrt(outputPowerBlock/juce::jmax(1,2*n)),-100.f));
 }
 void DrumBusProcessor::loadScaledReverb(float amount){
  const double factor=amount<0.f?1.0+0.006*(double)amount:1.0+0.01*(double)amount;
