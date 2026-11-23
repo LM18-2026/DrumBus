@@ -81,6 +81,14 @@ void DrumBusProcessor::prepareToPlay(double sr,int block){
  reverbMix.setCurrentAndTargetValue(0.f);
  lastReverbLength=0.f;
  eqLevelGain=1.f;
+ rmsInputSum=rmsOutputSum=0.0;rmsSamples=0;rmsTrim=1.f;
+ rmsTrimSmooth.reset(sr,0.15);rmsTrimSmooth.setCurrentAndTargetValue(1.f);
+ firPosition=0;dryPosition=0;
+ for(auto& c:firHistory)c.fill(0.f);
+ for(auto& c:dryDelay)c.fill(0.f);
+ for(auto& c:iirDelay)c.fill(0.f);
+ firKernel.fill(0.f);firKernel[firDelay]=1.f;
+ setLatencySamples(firDelay);
  clipSamples=0;clipObservedPeak=0.f;clipOriginalPeak=0.f;clipWasListening=false;
  clipCaptureComplete.store(false);clipMakeup.store(1.f);clipCalibratedReduction=-1.f;
  clipReady.store(false);clipAnalysisPercent.store(0);
@@ -115,10 +123,16 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
   // A new session always discards the previous EQ before recording.
   matched.store(false,std::memory_order_release);
   capturedCount.store(0,std::memory_order_release);
+  rmsInputSum=rmsOutputSum=0.0;rmsSamples=0;
+  rmsTrim=1.f;rmsTrimSmooth.setTargetValue(1.f);
   analysisPercent.store(0);
   readyToMatch.store(false,std::memory_order_release);
  }
  wasListening=listening;
+ if(listening && rmsSamples<captureSize){
+  const int count=juce::jmin(n,captureSize-rmsSamples);
+  for(int c=0;c<2;++c){const auto* d=buffer.getReadPointer(c);for(int i=0;i<count;++i)rmsInputSum+=(double)d[i]*d[i];}
+ }
  if(listening && !readyToMatch.load(std::memory_order_acquire)){
   int start=capturedCount.load(std::memory_order_relaxed);
   if(start<captureSize){
@@ -133,42 +147,42 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
   }
  }
  const float blend=juce::jlimit(0.f,1.f,*state.getRawParameterValue("blend")/100.f);
- if(blend>0.f && *state.getRawParameterValue("enable")>0.5f && matched.load(std::memory_order_acquire)){
+ const bool eqActive=blend>0.f && *state.getRawParameterValue("enable")>0.5f && matched.load(std::memory_order_acquire);
+ const bool linear=state.getRawParameterValue("phase")->load()>0.5f;
+ // Fixed latency in both modes; phase-aligned dry and wet paths.
+ if(n<=processed.getNumSamples()){
   juce::SpinLock::ScopedTryLockType lock(eqLock);
-  if(lock.isLocked()){
-   // Process into preallocated scratch buffer. The EQ gain budget is enforced at match creation.
-   if(n>processed.getNumSamples())return;
+  for(int i=0;i<n;++i){
    for(int c=0;c<2;++c){
-    auto* data=buffer.getReadPointer(c);
-    auto* dest=processed.getWritePointer(c);
-    for(int i=0;i<n;++i){
-     float v=data[i];
-     for(auto& filter:eq[(size_t)c])v=filter.processSample(v);
-     dest[i]=v;
-
+    const float in=buffer.getSample(c,i);
+    firHistory[(size_t)c][(size_t)firPosition]=in;
+    dryDelay[(size_t)c][(size_t)dryPosition]=in;
+    const int read=(dryPosition+1)%(firDelay+1);
+    const float dry=dryDelay[(size_t)c][(size_t)read];
+    float wet=dry;
+    if(eqActive && lock.isLocked()){
+     if(linear){
+      double v=0.0;
+      int idx=firPosition;
+      for(int k=0;k<firLength;++k){
+       v+=(double)firKernel[(size_t)k]*firHistory[(size_t)c][(size_t)idx];
+       if(--idx<0)idx=firLength-1;
+      }
+      wet=(float)v;
+     }else{
+      // Minimum-phase IIR result is delayed to align with the dry path.
+      float v=in;
+      for(auto& f:eq[(size_t)c])v=f.processSample(v);
+      // Reuse a separate circular delay for IIR wet path.
+      iirDelay[(size_t)c][(size_t)dryPosition]=v;
+      wet=iirDelay[(size_t)c][(size_t)read];
+     }
     }
+    processed.setSample(c,i,wet);
+    buffer.setSample(c,i,eqActive&&lock.isLocked() ? (1.f-blend)*dry+blend*wet : dry);
    }
-   // Match the short-term RMS of the processed EQ to its input, with a
-   // conservative +6 dB upper limit and a slow gain response.
-   double dryPower=0.0,wetPower=0.0;
-   for(int c=0;c<2;++c){
-    const auto* dry=buffer.getReadPointer(c);
-    const auto* wet=processed.getReadPointer(c);
-    for(int i=0;i<n;++i){
-     dryPower+=(double)dry[i]*dry[i];
-     wetPower+=(double)wet[i]*wet[i];
-    }
-   }
-   if(dryPower>1.e-9 && wetPower>1.e-9){
-    const float desired=juce::jlimit(0.5f,2.f,(float)std::sqrt(dryPower/wetPower));
-    const float alpha=1.f-std::exp(-(float)n/(float)(rate*0.5));
-    eqLevelGain+=alpha*(desired-eqLevelGain);
-   }
-   for(int c=0;c<2;++c){
-    auto* data=buffer.getWritePointer(c);
-    const auto* wet=processed.getReadPointer(c);
-    for(int i=0;i<n;++i)data[i]=(1.f-blend)*data[i]+blend*wet[i]*eqLevelGain;
-   }
+   firPosition=(firPosition+1)%firLength;
+   dryPosition=(dryPosition+1)%(firDelay+1);
   }
  }
  // Feed convolution every block to preserve tails and continuity.
@@ -238,6 +252,20 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
    buffer.setSample(0,i,postL*makeup);
    buffer.setSample(1,i,postR*makeup);
   }
+ }
+ // Compare the same five-second input window with the complete DSP output.
+ if(listening && rmsSamples<captureSize){
+  const int count=juce::jmin(n,captureSize-rmsSamples);
+  for(int c=0;c<2;++c){const auto* d=buffer.getReadPointer(c);for(int i=0;i<count;++i)rmsOutputSum+=(double)d[i]*d[i];}
+  rmsSamples+=count;
+  if(rmsSamples>=captureSize && rmsInputSum>1.e-12 && rmsOutputSum>1.e-12){
+   rmsTrim=juce::jlimit(0.25f,4.f,(float)std::sqrt(rmsInputSum/rmsOutputSum));
+   rmsTrimSmooth.setTargetValue(rmsTrim);
+  }
+ }
+ for(int i=0;i<n;++i){
+  const float gain=rmsTrimSmooth.getNextValue();
+  for(int c=0;c<2;++c)buffer.setSample(c,i,buffer.getSample(c,i)*gain);
  }
 }
 void DrumBusProcessor::loadScaledReverb(float amount){
@@ -386,8 +414,36 @@ void DrumBusProcessor::buildMatch(){
  }
  for(auto& channel:eq)for(auto& filter:channel)filter.reset();
  eqOutputGain=newOutputGain;
+ buildLinearKernel();
  matched.store(true,std::memory_order_release);
 }
+
+void DrumBusProcessor::buildLinearKernel(){
+ // Frequency sampling of the complete IIR magnitude, zero-phase, Hann-windowed.
+ constexpr int fftN=4096;
+ std::array<double,fftN/2+1> mag{};
+ for(int k=0;k<=fftN/2;++k){
+  const double hz=(double)k*rate/fftN;
+  double m=1.0;
+  for(const auto& f:eq[0])m*=f.coefficients->getMagnitudeForFrequency(juce::jmin(hz,rate*0.499999),rate);
+  mag[(size_t)k]=juce::jlimit(0.001,100.0,m);
+ }
+ double sum=0.0;
+ for(int t=0;t<firLength;++t){
+  const int lag=t-firDelay;
+  double v=mag[0]+mag[fftN/2]*((lag&1)?-1.0:1.0);
+  for(int k=1;k<fftN/2;++k)v+=2.0*mag[(size_t)k]*std::cos(juce::MathConstants<double>::twoPi*k*lag/fftN);
+  const double w=0.5-0.5*std::cos(juce::MathConstants<double>::twoPi*t/(firLength-1));
+  firKernel[(size_t)t]=(float)(v*w/fftN);
+  sum+=firKernel[(size_t)t];
+ }
+ // Preserve calculated DC magnitude after windowing.
+ if(std::abs(sum)>1.e-9){
+  const float correction=(float)(mag[0]/sum);
+  for(auto& tap:firKernel)tap*=correction;
+ }
+}
+
 bool DrumBusProcessor::getEqResponse(EqResponse& response){
  if(!matched.load(std::memory_order_acquire)){
   response.fill(0.f);
