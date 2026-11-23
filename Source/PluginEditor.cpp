@@ -108,7 +108,24 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("ATTACK",888,270,78,25,juce::Justification::centredLeft);
  g.drawText("RELEASE",888,315,78,25,juce::Justification::centredLeft);
  g.drawText("RATIO",888,363,78,25,juce::Justification::centredLeft);
- g.drawText("GAIN REDUCTION  "+juce::String(processor.compReductionDb.load(),1)+" dB",887,408,280,32,juce::Justification::centred);
+ // Scaled gain-reduction meter, VU-style 300/500 ms ballistics.
+ const float gr=juce::jlimit(0.f,30.f,processor.compGrVuDb.load());
+ const juce::Rectangle<float> grTrack(903.f,417.f,246.f,12.f);
+ g.setColour(juce::Colours::white);g.setFont(juce::Font(juce::FontOptions(13.f).withStyle("Bold")));
+ g.drawText("GR",892,395,42,20,juce::Justification::centredLeft);
+ g.setColour(juce::Colour(0xffa8b8ca));g.setFont(juce::Font(juce::FontOptions(12.f)));
+ g.drawText(juce::String(processor.compReductionDb.load(),1)+" dB",1080,395,72,20,juce::Justification::centredRight);
+ g.setColour(juce::Colour(0xff243343));g.fillRoundedRectangle(grTrack,3.f);
+ if(gr>0.01f){
+  g.setColour(juce::Colour(0xff3dbadf));
+  g.fillRoundedRectangle(grTrack.withWidth(grTrack.getWidth()*gr/30.f),3.f);
+ }
+ g.setColour(juce::Colour(0xffa8b8ca));g.setFont(juce::Font(juce::FontOptions(11.f)));
+ for(const int tick:{0,5,10,15,20,25,30}){
+  const float x=grTrack.getX()+grTrack.getWidth()*(float)tick/30.f;
+  g.drawVerticalLine((int)std::round(x),430.f,435.f);
+  g.drawText(juce::String(tick),(int)x-12,435,24,15,juce::Justification::centred);
+ }
  // VU ballistics: the bar uses a 300 ms power integrator.
  // Peak and RMS text are accumulated from RESET until the next reset.
  auto meter=[&](int x,const juce::String& name,float peak,float rms,float vu){
