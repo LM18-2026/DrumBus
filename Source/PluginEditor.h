@@ -6,9 +6,15 @@ public:
  void paint(juce::Graphics&) override;
  void resized() override;
 private:
- void timerCallback() override {processor.getEqResponse(responseCurve);repaint();}
+ void timerCallback() override {
+  processor.getEqResponse(responseCurve);
+  if(++grNumericTicks>=3){grNumericTicks=0;grNumericDisplayed=processor.compReductionDb.load(std::memory_order_relaxed);}
+  repaint();
+ }
  DrumBusProcessor& processor;
  DrumBusProcessor::EqResponse responseCurve{};
+ int grNumericTicks=0;
+ float grNumericDisplayed=0.f;
  juce::TextButton analyse{"EQ LISTEN (5 s)"};
  juce::ToggleButton enabled{"MATCH EQ"};
  juce::Slider blend,depth,reverbWet,reverbLength;
