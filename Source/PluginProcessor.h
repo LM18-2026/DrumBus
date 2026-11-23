@@ -71,7 +71,9 @@ private:
  double meterInputEnergy=0.0,meterOutputEnergy=0.0;
  juce::uint64 meterFrames=0;
  float meterInputMax=0.f,meterOutputMax=0.f;
- float compEnvelope=0.f,compGainDb=0.f,compGrVuState=0.f;
+ std::array<float,2> compEnvelope{{0.f,0.f}},compGainDb{{0.f,0.f}};
+ float compStereoEnvelope=0.f,compStereoGainDb=0.f,compGrVuState=0.f;
+ juce::SmoothedValue<float> compModeSmooth;
  juce::SmoothedValue<float> compEnableSmooth;
  std::atomic<int> capturedCount{0};
  int captureSize=0;
