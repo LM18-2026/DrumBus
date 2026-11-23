@@ -1,7 +1,7 @@
 name: DrumBus Windows VST3
 on:
   push:
-    branches: [main]
+    branches: [main, feature/linear-phase-rms-v019]
   workflow_dispatch:
 jobs:
   build:
@@ -17,8 +17,8 @@ jobs:
         run: |
           $plugin = Get-ChildItem build -Recurse -Directory -Filter 'LM18 DrumBus.vst3' | Select-Object -First 1
           if (-not $plugin) { throw 'LM18 DrumBus.vst3 not found' }
-          Compress-Archive -Path $plugin.FullName -DestinationPath DrumBus-V0.17-Windows.zip
+          Compress-Archive -Path $plugin.FullName -DestinationPath DrumBus-V0.19-Windows.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: DrumBus-V0.17-Windows
-          path: DrumBus-V0.17-Windows.zip
+          name: DrumBus-V0.19-Windows
+          path: DrumBus-V0.19-Windows.zip
