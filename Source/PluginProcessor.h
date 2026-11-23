@@ -54,7 +54,12 @@ private:
  std::array<double,bands> reference{},input{},frequencies{};
  std::array<float,fftSize> window{},frame{};
  std::array<float,fftSize*2> fftData{};
- std::array<std::array<juce::dsp::IIR::Filter<float>,bands>,2> eq;
+ using EqBank=std::array<std::array<juce::dsp::IIR::Filter<float>,bands>,2>;
+ std::array<EqBank,2> eqBanks;
+ std::atomic<int> activeEqBank{0},pendingEqBank{-1};
+ std::atomic<bool> eqCrossfading{false};
+ int eqFadeRemaining=0,eqFadeTotal=1,eqFadeFrom=0,eqFadeTo=0;
+ bool eqFadeFromDry=false;
  juce::AudioBuffer<float> captured,processed,reverbBuffer,clipCapturedPre,clipCapturedOriginal;
  juce::dsp::Convolution reverb;
  juce::SmoothedValue<float> reverbMix;
