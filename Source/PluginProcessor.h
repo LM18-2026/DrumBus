@@ -34,6 +34,7 @@ public:
  std::atomic<bool> clipReady{false};
  std::atomic<bool> clipCaptureComplete{false};
  std::atomic<float> clipMakeup{1.f};
+ std::atomic<float> inputPeakDb{-100.f},outputPeakDb{-100.f},inputRmsDb{-100.f},outputRmsDb{-100.f};
  static constexpr int eqDisplayPoints=160;
  using EqResponse=std::array<float,eqDisplayPoints>;
  bool getEqResponse(EqResponse& response);
@@ -68,6 +69,11 @@ private:
  double rmsInputSum=0.0,rmsOutputSum=0.0;
  int rmsSamples=0;
  float rmsTrim=1.f;
+ int previousPhase=0;
+ int phaseMeasureSamples=0;
+ double phaseInputPower=0.0,phaseOutputPower=0.0;
+ float phaseCompensation=1.f;
+ juce::SmoothedValue<float,juce::ValueSmoothingTypes::Multiplicative> phaseGainSmooth;
  juce::SmoothedValue<float,juce::ValueSmoothingTypes::Multiplicative> rmsTrimSmooth;
  std::array<juce::dsp::IIR::Filter<float>,2> clipPre,clipPost,clipPostClean;
  float clipThreshold=1.f;
