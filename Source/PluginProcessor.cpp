@@ -13,16 +13,28 @@ DrumBusProcessor::DrumBusProcessor()
 juce::AudioProcessorValueTreeState::ParameterLayout DrumBusProcessor::params(){
  std::vector<std::unique_ptr<juce::RangedAudioParameter>> p;
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"listen",1},"Analyse",false));
- p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"phase",1},"Phase",juce::StringArray{"MinPhase","LinPhase"},0));
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"enable",1},"Match EQ",true));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"blend",1},"EQ Blend",juce::NormalisableRange<float>(0.f,100.f,1.f),100.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"strength",1},"Match Depth",juce::NormalisableRange<float>(0.f,100.f,1.f),35.f));
+ p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"tiltEnable",1},"Tilt EQ Enabled",false));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"tiltDb",1},"Tilt dB",juce::NormalisableRange<float>(-12.f,12.f,0.1f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"reverbMix",1},"Reverb Dry Wet",juce::NormalisableRange<float>(0.f,100.f,1.f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"reverbLength",1},"Reverb IR Length",juce::NormalisableRange<float>(-100.f,100.f,1.f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"reverbEnable",1},"Reverb Enabled",true));
- p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"clipEnable",1},"Clipper Enabled",false));
- p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"clipListen",1},"Clipper Listen",false));
- p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"clipReduction",1},"Clip Reduction dB",juce::NormalisableRange<float>(0.f,12.f,0.1f),0.f));
+ p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"compEnable",1},"FET Compressor Enabled",false));
+ p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"compMode",1},"FET Channel Mode",juce::StringArray{"Stereo","Dual Mono"},0));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"compInput",1},"FET Input dB",juce::NormalisableRange<float>(-24.f,24.f,0.1f),0.f));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"compOutput",1},"FET Output dB",juce::NormalisableRange<float>(-18.f,18.f,0.1f),0.f));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"compAttack",1},"FET Attack ms",juce::NormalisableRange<float>(0.02f,0.8f,0.01f),0.3f));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"compRelease",1},"FET Release ms",juce::NormalisableRange<float>(50.f,1100.f,1.f),200.f));
+ p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"compRatio",1},"FET Ratio",juce::StringArray{"4:1","8:1","12:1","20:1"},0));
+ p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"sweetEnable",1},"Sweetening EQ Enabled",false));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetBass",1},"RedEQ Bass Percent",juce::NormalisableRange<float>(-100.f,100.f,0.1f),0.f));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetTreble",1},"RedEQ Treble Percent",juce::NormalisableRange<float>(-100.f,100.f,0.1f),0.f));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetFreq",1},"Sweet Param Hz",juce::NormalisableRange<float>(20.f,20000.f,0.1f,0.25f),1000.f));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetGain",1},"Sweet Param dB",juce::NormalisableRange<float>(-24.f,24.f,0.1f),0.f));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetQ",1},"Sweet Param Q",juce::NormalisableRange<float>(0.1f,20.f,0.01f,0.35f),1.f));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetSat",1},"Sweet Param SAT",juce::NormalisableRange<float>(0.f,100.f,0.1f),0.f));
  return {p.begin(),p.end()};
 }
 int DrumBusProcessor::bandForFrequency(double hz) const {
@@ -72,8 +84,6 @@ void DrumBusProcessor::prepareToPlay(double sr,int block){
  rate=sr;
  captureSize=(int)std::ceil(sr*5.0);
  captured.setSize(1,captureSize);
- clipCapturedPre.setSize(2,captureSize);
- clipCapturedOriginal.setSize(2,captureSize);
  processed.setSize(2,juce::jmax(1,block));
  reverbBuffer.setSize(2,juce::jmax(1,block));
  reverb.prepare({sr,(juce::uint32)juce::jmax(1,block),2});
@@ -81,20 +91,24 @@ void DrumBusProcessor::prepareToPlay(double sr,int block){
  reverbMix.setCurrentAndTargetValue(0.f);
  lastReverbLength=0.f;
  eqLevelGain=1.f;
- clipSamples=0;clipObservedPeak=0.f;clipOriginalPeak=0.f;clipWasListening=false;
- clipCaptureComplete.store(false);clipMakeup.store(1.f);clipCalibratedReduction=-1.f;
- clipReady.store(false);clipAnalysisPercent.store(0);
- clipThreshold=1.f;
- clipThresholdSmooth.reset(sr,0.05);
- clipThresholdSmooth.setCurrentAndTargetValue(1.f);
- auto pre=juce::dsp::IIR::Coefficients<float>::makeLowShelf(sr,300.0,0.70710678f,juce::Decibels::decibelsToGain(-24.f));
- auto post=juce::dsp::IIR::Coefficients<float>::makeLowShelf(sr,300.0,0.70710678f,juce::Decibels::decibelsToGain(24.f));
- for(int c=0;c<2;++c){
-  *clipPre[(size_t)c].coefficients=*pre;
-  *clipPost[(size_t)c].coefficients=*post;
-  *clipPostClean[(size_t)c].coefficients=*post;
-  clipPre[(size_t)c].reset();clipPost[(size_t)c].reset();clipPostClean[(size_t)c].reset();
- }
+ rmsInputSum=rmsOutputSum=0.0;rmsSamples=0;rmsTrim=1.f;
+ rmsTrimSmooth.reset(sr,0.15);rmsTrimSmooth.setCurrentAndTargetValue(1.f);
+ setLatencySamples(0);
+ sweetBassSmooth.reset(sr,0.04);sweetTrebleSmooth.reset(sr,0.04);
+ sweetGainSmooth.reset(sr,0.04);sweetSatSmooth.reset(sr,0.04);
+ sweetBassSmooth.setCurrentAndTargetValue(0.f);sweetTrebleSmooth.setCurrentAndTargetValue(0.f);
+ sweetGainSmooth.setCurrentAndTargetValue(0.f);sweetSatSmooth.setCurrentAndTargetValue(0.f);
+ for(auto& ch:sweetBass)for(auto& f:ch)f.reset();
+ for(auto& ch:sweetTreble)for(auto& f:ch)f.reset();
+ for(auto& f:sweetParam)f.reset();
+ tiltLowState.fill(0.f);
+ tiltGainSmooth.reset(sr,0.025);tiltGainSmooth.setCurrentAndTargetValue(0.f);
+ tiltLowCoeff=(float)std::exp(-juce::MathConstants<double>::twoPi*1000.0/sr);
+ compEnvelope.fill(0.f);compGainDb.fill(0.f);compStereoEnvelope=0.f;compStereoGainDb=0.f;
+ compGrVuState=0.f;compReductionDb.store(0.f);compGrVuDb.store(0.f);
+ compModeSmooth.reset(sr,0.03);
+ compModeSmooth.setCurrentAndTargetValue(state.getRawParameterValue("compMode")->load()>0.5f?1.f:0.f);
+ compEnableSmooth.reset(sr,0.02);compEnableSmooth.setCurrentAndTargetValue(0.f);
  loadScaledReverb(0.f);
  captured.clear();
  capturedCount.store(0);
@@ -103,22 +117,35 @@ void DrumBusProcessor::prepareToPlay(double sr,int block){
  analysisPercent.store(0);
  wasListening=false;
  lastStrength=*state.getRawParameterValue("strength");
- for(auto& channel:eq)for(auto& filter:channel)filter.reset();
+ for(auto& bank:eqBanks)for(auto& channel:bank)for(auto& filter:channel)filter.reset();
+ activeEqBank.store(0);pendingEqBank.store(-1);eqCrossfading.store(false);eqFadeRemaining=0;
+ eqFadeTotal=juce::jmax(1,(int)std::round(sr*0.05));
  analyseReference();
+ restoreSavedMatch();
 }
 void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiBuffer&){
  juce::ScopedNoDenormals nd;
  const int n=buffer.getNumSamples();
  if(buffer.getNumChannels()<2)return;
  const bool listening=*state.getRawParameterValue("listen")>0.5f;
+ double inputPowerBlock=0.0,inputPeakBlock=0.0;
+ for(int c=0;c<2;++c){const auto* d=buffer.getReadPointer(c);for(int i=0;i<n;++i){inputPowerBlock+=(double)d[i]*d[i];inputPeakBlock=juce::jmax(inputPeakBlock,(double)std::abs(d[i]));}}
+ const double inputRmsBlock=std::sqrt(inputPowerBlock/juce::jmax(1,2*n));
+ // Meter values are updated after the complete block; input is captured here.
  if(listening && !wasListening){
   // A new session always discards the previous EQ before recording.
   matched.store(false,std::memory_order_release);
   capturedCount.store(0,std::memory_order_release);
+  rmsInputSum=rmsOutputSum=0.0;rmsSamples=0;
+  rmsTrim=1.f;rmsTrimSmooth.setTargetValue(1.f);
   analysisPercent.store(0);
   readyToMatch.store(false,std::memory_order_release);
  }
  wasListening=listening;
+ if(listening && rmsSamples<captureSize){
+  const int count=juce::jmin(n,captureSize-rmsSamples);
+  for(int c=0;c<2;++c){const auto* d=buffer.getReadPointer(c);for(int i=0;i<count;++i)rmsInputSum+=(double)d[i]*d[i];}
+ }
  if(listening && !readyToMatch.load(std::memory_order_acquire)){
   int start=capturedCount.load(std::memory_order_relaxed);
   if(start<captureSize){
@@ -133,42 +160,57 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
   }
  }
  const float blend=juce::jlimit(0.f,1.f,*state.getRawParameterValue("blend")/100.f);
- if(blend>0.f && *state.getRawParameterValue("enable")>0.5f && matched.load(std::memory_order_acquire)){
-  juce::SpinLock::ScopedTryLockType lock(eqLock);
-  if(lock.isLocked()){
-   // Process into preallocated scratch buffer. The EQ gain budget is enforced at match creation.
-   if(n>processed.getNumSamples())return;
-   for(int c=0;c<2;++c){
-    auto* data=buffer.getReadPointer(c);
-    auto* dest=processed.getWritePointer(c);
-    for(int i=0;i<n;++i){
-     float v=data[i];
-     for(auto& filter:eq[(size_t)c])v=filter.processSample(v);
-     dest[i]=v;
-
-    }
-   }
-   // Match the short-term RMS of the processed EQ to its input, with a
-   // conservative +6 dB upper limit and a slow gain response.
-   double dryPower=0.0,wetPower=0.0;
-   for(int c=0;c<2;++c){
-    const auto* dry=buffer.getReadPointer(c);
-    const auto* wet=processed.getReadPointer(c);
-    for(int i=0;i<n;++i){
-     dryPower+=(double)dry[i]*dry[i];
-     wetPower+=(double)wet[i]*wet[i];
-    }
-   }
-   if(dryPower>1.e-9 && wetPower>1.e-9){
-    const float desired=juce::jlimit(0.5f,2.f,(float)std::sqrt(dryPower/wetPower));
-    const float alpha=1.f-std::exp(-(float)n/(float)(rate*0.5));
-    eqLevelGain+=alpha*(desired-eqLevelGain);
-   }
+ const bool eqActive=blend>0.f && *state.getRawParameterValue("enable")>0.5f && matched.load(std::memory_order_acquire);
+ // All coefficient updates happen in an inactive bank on the message thread.
+ // The audio thread owns filter states and crossfades for 50 ms.
+ const int requested=pendingEqBank.exchange(-1,std::memory_order_acq_rel);
+ if(requested>=0){
+  eqFadeFrom=activeEqBank.load(std::memory_order_relaxed);
+  eqFadeTo=requested;
+  eqFadeFromDry=!matched.load(std::memory_order_acquire);
+  eqFadeRemaining=eqFadeTotal;
+  eqCrossfading.store(true,std::memory_order_release);
+  matched.store(true,std::memory_order_release);
+ }
+ if(n<=processed.getNumSamples() && (eqActive||eqFadeRemaining>0)){
+  for(int i=0;i<n;++i){
+   const bool fading=eqFadeRemaining>0;
+   const float cross=fading ? 1.f-(float)eqFadeRemaining/(float)eqFadeTotal : 1.f;
+   const int active=activeEqBank.load(std::memory_order_relaxed);
    for(int c=0;c<2;++c){
     auto* data=buffer.getWritePointer(c);
-    const auto* wet=processed.getReadPointer(c);
-    for(int i=0;i<n;++i)data[i]=(1.f-blend)*data[i]+blend*wet[i]*eqLevelGain;
+    const float dry=data[i];
+    float wet=dry;
+    if(fading){
+     float from=dry,to=dry;
+     if(!eqFadeFromDry)for(auto& filter:eqBanks[(size_t)eqFadeFrom][(size_t)c])from=filter.processSample(from);
+     for(auto& filter:eqBanks[(size_t)eqFadeTo][(size_t)c])to=filter.processSample(to);
+     wet=from+(to-from)*cross;
+    }else if(eqActive){
+     for(auto& filter:eqBanks[(size_t)active][(size_t)c])wet=filter.processSample(wet);
+    }
+    data[i]=dry*(1.f-blend)+wet*blend;
    }
+   if(fading && --eqFadeRemaining==0){
+    activeEqBank.store(eqFadeTo,std::memory_order_release);
+    eqCrossfading.store(false,std::memory_order_release);
+   }
+  }
+ }
+ // Independent post-Match tilt EQ, first-order complementary low/high split.
+ // At 0 dB both paths sum exactly to the unprocessed signal.
+ const bool tiltOn=state.getRawParameterValue("tiltEnable")->load()>0.5f;
+ const float tiltTarget=tiltOn?state.getRawParameterValue("tiltDb")->load():0.f;
+ tiltGainSmooth.setTargetValue(tiltTarget);
+ for(int i=0;i<n;++i){
+  const float db=tiltGainSmooth.getNextValue();
+  const float lowGain=juce::Decibels::decibelsToGain(-db);
+  const float highGain=juce::Decibels::decibelsToGain(db);
+  for(int c=0;c<2;++c){
+   const float x=buffer.getSample(c,i);
+   const float low=tiltLowCoeff*tiltLowState[(size_t)c]+(1.f-tiltLowCoeff)*x;
+   tiltLowState[(size_t)c]=low;
+   buffer.setSample(c,i,low*lowGain+(x-low)*highGain);
   }
  }
  // Feed convolution every block to preserve tails and continuity.
@@ -188,57 +230,147 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
    }
   }
  }
- // Clipper: analyse the bass-attenuated post-reverb signal for five seconds.
- const bool clipListening=*state.getRawParameterValue("clipListen")>0.5f;
- if(clipListening && !clipWasListening){
-  clipReady.store(false,std::memory_order_release);
-  clipCaptureComplete.store(false,std::memory_order_release);
-  clipMakeup.store(1.f,std::memory_order_release);
-  clipSamples=0;clipObservedPeak=0.f;clipOriginalPeak=0.f;clipCalibratedReduction=-1.f;
-  clipAnalysisPercent.store(0);
- }
- clipWasListening=clipListening;
- const bool clipping=*state.getRawParameterValue("clipEnable")>0.5f;
- const float reduction=juce::jlimit(0.f,12.f,state.getRawParameterValue("clipReduction")->load());
- const bool active=clipping && reduction>0.f && clipReady.load(std::memory_order_acquire);
- // Keep pre-shelf states warm even while bypassed, to avoid a startup transient.
+ // Two independent detectors run continuously alongside the stereo-linked
+ // detector. Crossfade their gain laws over 30 ms when changing modes.
+ const bool compOn=state.getRawParameterValue("compEnable")->load()>0.5f;
+ const bool dualMono=state.getRawParameterValue("compMode")->load()>0.5f;
+ const float inputGain=juce::Decibels::decibelsToGain(state.getRawParameterValue("compInput")->load());
+ const float outputGain=juce::Decibels::decibelsToGain(state.getRawParameterValue("compOutput")->load());
+ const float attackMs=juce::jlimit(0.02f,0.8f,state.getRawParameterValue("compAttack")->load());
+ const float releaseMs=juce::jlimit(50.f,1100.f,state.getRawParameterValue("compRelease")->load());
+ const int ratioIndex=juce::jlimit(0,3,(int)state.getRawParameterValue("compRatio")->load());
+ constexpr float ratios[]={4.f,8.f,12.f,20.f};
+ const float ratio=ratios[ratioIndex];
+ const float attackCoeff=std::exp(-1.f/(float)(rate*attackMs*0.001));
+ const float releaseCoeff=std::exp(-1.f/(float)(rate*releaseMs*0.001));
+ const float grVuAttack=std::exp(-1.f/(float)(rate*0.3));
+ const float grVuRelease=std::exp(-1.f/(float)(rate*0.5));
+ const auto updateDetector=[&](float detector,float& envelope,float& gainReduction){
+  const float coeff=detector>envelope?attackCoeff:releaseCoeff;
+  envelope=coeff*envelope+(1.f-coeff)*detector;
+  const float levelDb=juce::Decibels::gainToDecibels(juce::jmax(envelope,1.e-8f),-160.f);
+  const float over=levelDb+18.f;
+  float targetReduction=0.f;
+  if(over>1.5f)targetReduction=over*(1.f-1.f/ratio);
+  else if(over>-1.5f){const float x=over+1.5f;targetReduction=x*x*(1.f-1.f/ratio)/6.f;}
+  const float gainCoeff=targetReduction>gainReduction?attackCoeff:releaseCoeff;
+  gainReduction=gainCoeff*gainReduction+(1.f-gainCoeff)*targetReduction;
+ };
+ compEnableSmooth.setTargetValue(compOn?1.f:0.f);
+ compModeSmooth.setTargetValue(dualMono?1.f:0.f);
+ float displayGr=0.f;
  for(int i=0;i<n;++i){
-  const float a=buffer.getSample(0,i),b=buffer.getSample(1,i);
-  const float preL=clipPre[0].processSample(a);
-  const float preR=clipPre[1].processSample(b);
-  if(clipListening && !clipCaptureComplete.load(std::memory_order_relaxed)){
-   // Analyse the bass-attenuated signal actually entering the clipper.
-   clipObservedPeak=juce::jmax(clipObservedPeak,std::abs(preL),std::abs(preR));
-   clipOriginalPeak=juce::jmax(clipOriginalPeak,std::abs(a),std::abs(b));
-   clipCapturedPre.setSample(0,clipSamples,preL);
-   clipCapturedPre.setSample(1,clipSamples,preR);
-   clipCapturedOriginal.setSample(0,clipSamples,a);
-   clipCapturedOriginal.setSample(1,clipSamples,b);
-   if(++clipSamples>=captureSize){
-    clipThreshold=juce::jmax(1.e-6f,clipObservedPeak);
-    clipCaptureComplete.store(true,std::memory_order_release);
-    clipAnalysisPercent.store(100);
-   }else if((clipSamples&1023)==0)
-    clipAnalysisPercent.store((int)(100.0*clipSamples/captureSize));
-  }
-  const float threshold=juce::jmax(1.e-6f,clipThreshold*juce::Decibels::decibelsToGain(-reduction));
-  clipThresholdSmooth.setTargetValue(threshold);
-  const float t=clipThresholdSmooth.getNextValue();
-  const float limitedL=juce::jlimit(-t,t,preL);
-  const float limitedR=juce::jlimit(-t,t,preR);
-  const float postL=clipPost[0].processSample(limitedL);
-  const float postR=clipPost[1].processSample(limitedR);
-  // Keep the parallel inverse shelf updated for smooth state continuity.
-  clipPostClean[0].processSample(preL);
-  clipPostClean[1].processSample(preR);
-  if(active){
-   // Clip only the bass-attenuated path. Restore bass with the inverse
-   // shelf, then raise the complete output by the selected reduction.
-   const float makeup=clipMakeup.load(std::memory_order_relaxed);
-   buffer.setSample(0,i,postL*makeup);
-   buffer.setSample(1,i,postR*makeup);
+  const float l=buffer.getSample(0,i),r=buffer.getSample(1,i);
+  const float drivenL=l*inputGain,drivenR=r*inputGain;
+  updateDetector(juce::jmax(std::abs(drivenL),std::abs(drivenR)),compStereoEnvelope,compStereoGainDb);
+  updateDetector(std::abs(drivenL),compEnvelope[0],compGainDb[0]);
+  updateDetector(std::abs(drivenR),compEnvelope[1],compGainDb[1]);
+  const float modeMix=compModeSmooth.getNextValue();
+  const float grL=compStereoGainDb+(compGainDb[0]-compStereoGainDb)*modeMix;
+  const float grR=compStereoGainDb+(compGainDb[1]-compStereoGainDb)*modeMix;
+  const float wetL=drivenL*juce::Decibels::decibelsToGain(-grL)*outputGain;
+  const float wetR=drivenR*juce::Decibels::decibelsToGain(-grR)*outputGain;
+  const float mix=compEnableSmooth.getNextValue();
+  buffer.setSample(0,i,l+(wetL-l)*mix);
+  buffer.setSample(1,i,r+(wetR-r)*mix);
+  // In dual mono the single GR display shows the greater reduction.
+  displayGr=juce::jmax(grL,grR)*mix;
+  const float grCoeff=displayGr>compGrVuState?grVuAttack:grVuRelease;
+  compGrVuState=grCoeff*compGrVuState+(1.f-grCoeff)*displayGr;
+ }
+ compReductionDb.store(displayGr,std::memory_order_relaxed);
+ compGrVuDb.store(compGrVuState,std::memory_order_relaxed);
+ // Compare the same five-second input window with the complete DSP output.
+ if(listening && rmsSamples<captureSize){
+  const int count=juce::jmin(n,captureSize-rmsSamples);
+  for(int c=0;c<2;++c){const auto* d=buffer.getReadPointer(c);for(int i=0;i<count;++i)rmsOutputSum+=(double)d[i]*d[i];}
+  rmsSamples+=count;
+  if(rmsSamples>=captureSize && rmsInputSum>1.e-12 && rmsOutputSum>1.e-12){
+   rmsTrim=juce::jlimit(0.25f,4.f,(float)std::sqrt(rmsInputSum/rmsOutputSum));
+   rmsTrimSmooth.setTargetValue(rmsTrim);
   }
  }
+ for(int i=0;i<n;++i){
+  const float gain=rmsTrimSmooth.getNextValue();
+  for(int c=0;c<2;++c)buffer.setSample(c,i,buffer.getSample(c,i)*gain);
+ }
+ // Sweetening EQ: minimum-phase IIR approximation of measured RedEQ
+ // maximum-boost impulse responses (44.1 kHz reference).
+ // Gain values are logarithmically scaled, negative controls invert dB curves.
+ // Each biquad retains state; coefficients are updated without allocations.
+ static constexpr double centers[sweetBands]={
+  30.,48.9,79.6,129.6,211.,343.6,559.6,911.3,
+  1484.1,2417.,3936.1,6410.,10438.9,17000.};
+ static constexpr double bassCurve[sweetBands]={
+  15.390,3.432,6.616,3.129,3.160,1.151,0.462,-0.377,
+  -0.459,-0.489,-0.679,-0.738,-1.822,-6.612};
+ static constexpr double trebleCurve[sweetBands]={
+  -0.017,0.145,0.058,0.085,0.043,-0.094,-0.239,-0.263,
+  -0.109,0.317,1.340,3.518,7.565,6.789};
+ const bool sweetOn=state.getRawParameterValue("sweetEnable")->load()>0.5f;
+ sweetBassSmooth.setTargetValue(sweetOn?state.getRawParameterValue("sweetBass")->load()/100.f:0.f);
+ sweetTrebleSmooth.setTargetValue(sweetOn?state.getRawParameterValue("sweetTreble")->load()/100.f:0.f);
+ sweetGainSmooth.setTargetValue(sweetOn?state.getRawParameterValue("sweetGain")->load():0.f);
+ sweetSatSmooth.setTargetValue(sweetOn?state.getRawParameterValue("sweetSat")->load()/100.f:0.f);
+ const float paramFreq=state.getRawParameterValue("sweetFreq")->load();
+ const float paramQ=state.getRawParameterValue("sweetQ")->load();
+ for(int i=0;i<n;++i){
+  const float bass=sweetBassSmooth.getNextValue(),treble=sweetTrebleSmooth.getNextValue();
+  const float gain=sweetGainSmooth.getNextValue(),sat=sweetSatSmooth.getNextValue();
+  // 32-sample coefficient ramp; filter states never reset during automation.
+  if((i&31)==0){
+   for(int c=0;c<2;++c){
+    for(int b=0;b<sweetBands;++b){
+     sweetBass[(size_t)c][(size_t)b].setPeak(rate,centers[b],0.8,bassCurve[b]*bass);
+     sweetTreble[(size_t)c][(size_t)b].setPeak(rate,centers[b],0.8,trebleCurve[b]*treble);
+    }
+    sweetParam[(size_t)c].setPeak(rate,paramFreq,paramQ,gain);
+   }
+  }
+  for(int c=0;c<2;++c){
+   float x=buffer.getSample(c,i);
+   for(auto& f:sweetBass[(size_t)c])x=f.process(x);
+   for(auto& f:sweetTreble[(size_t)c])x=f.process(x);
+   x=sweetParam[(size_t)c].process(x);
+   // Soft saturation; 0% SAT is bit-identical to the unsaturated signal.
+   if(sat>0.f){const float driven=std::tanh(2.5f*x)/std::tanh(2.5f);x+=sat*(driven-x);}
+   buffer.setSample(c,i,x);
+  }
+ }
+ // VU-style RMS bar: 300 ms power-domain integration.
+ // Numeric RMS: cumulative energy average since RESET.
+ // Numeric PEAK: maximum absolute sample since RESET.
+ const auto reset=metersResetGeneration.load(std::memory_order_acquire);
+ if(reset!=metersAppliedGeneration){
+  metersAppliedGeneration=reset;
+  meterInputPower=0.0;meterOutputPower=0.0;
+  meterInputEnergy=0.0;meterOutputEnergy=0.0;meterFrames=0;
+  meterInputMax=0.f;meterOutputMax=0.f;
+ }
+ double outputPowerBlock=0.0,outputPeakBlock=0.0;
+ for(int c=0;c<2;++c){
+  const auto* d=buffer.getReadPointer(c);
+  for(int i=0;i<n;++i){
+   outputPowerBlock+=(double)d[i]*d[i];
+   outputPeakBlock=juce::jmax(outputPeakBlock,(double)std::abs(d[i]));
+  }
+ }
+ const double alpha=std::exp(-(double)n/(rate*0.3));
+ const double inPower=inputPowerBlock/juce::jmax(1,2*n);
+ const double outPower=outputPowerBlock/juce::jmax(1,2*n);
+ meterInputPower=alpha*meterInputPower+(1.0-alpha)*inPower;
+ meterOutputPower=alpha*meterOutputPower+(1.0-alpha)*outPower;
+ inputVuDb.store(juce::Decibels::gainToDecibels((float)std::sqrt(meterInputPower),-100.f));
+ outputVuDb.store(juce::Decibels::gainToDecibels((float)std::sqrt(meterOutputPower),-100.f));
+ meterInputEnergy+=inputPowerBlock;meterOutputEnergy+=outputPowerBlock;
+ meterFrames+=(juce::uint64)n;
+ meterInputMax=juce::jmax(meterInputMax,(float)inputPeakBlock);
+ meterOutputMax=juce::jmax(meterOutputMax,(float)outputPeakBlock);
+ const double denom=juce::jmax(1.0,2.0*(double)meterFrames);
+ inputPeakDb.store(juce::Decibels::gainToDecibels(meterInputMax,-100.f));
+ outputPeakDb.store(juce::Decibels::gainToDecibels(meterOutputMax,-100.f));
+ inputRmsDb.store(juce::Decibels::gainToDecibels((float)std::sqrt(meterInputEnergy/denom),-100.f));
+ outputRmsDb.store(juce::Decibels::gainToDecibels((float)std::sqrt(meterOutputEnergy/denom),-100.f));
 }
 void DrumBusProcessor::loadScaledReverb(float amount){
  const double factor=amount<0.f?1.0+0.006*(double)amount:1.0+0.01*(double)amount;
@@ -279,42 +411,11 @@ void DrumBusProcessor::loadScaledReverb(float amount){
   channels==2?juce::dsp::Convolution::Stereo::yes:juce::dsp::Convolution::Stereo::no,
   juce::dsp::Convolution::Trim::no,juce::dsp::Convolution::Normalise::no);
 }
-void DrumBusProcessor::calibrateClipper(){
- if(!clipCaptureComplete.load(std::memory_order_acquire))return;
- const float reduction=juce::jlimit(0.f,12.f,state.getRawParameterValue("clipReduction")->load());
- if(clipReady.load(std::memory_order_acquire) && reduction==clipCalibratedReduction)return;
- // Reconstruct the captured five-second signal using a separate pair of
- // inverse shelves. Never mutate the live audio filters from the timer.
- auto coefficients=juce::dsp::IIR::Coefficients<float>::makeLowShelf(
-  rate,300.0,0.70710678f,juce::Decibels::decibelsToGain(24.f));
- const float threshold=juce::jmax(1.e-6f,clipThreshold*juce::Decibels::decibelsToGain(-reduction));
- double reconstructedPeak=0.0;
- for(int c=0;c<2;++c){
-  juce::dsp::IIR::Filter<float> inverse;
-  *inverse.coefficients=*coefficients;
-  inverse.reset();
-  const float* samples=clipCapturedPre.getReadPointer(c);
-  for(int i=0;i<captureSize;++i){
-   const float clipped=juce::jlimit(-threshold,threshold,samples[i]);
-   reconstructedPeak=juce::jmax(reconstructedPeak,(double)std::abs(inverse.processSample(clipped)));
-  }
- }
- const float original=clipOriginalPeak;
- // Keep the original peak after bass restoration. This is a calibration
- // of the analysed five-second section, not a guarantee for future audio.
- const float makeup=(original>1.e-8f && reconstructedPeak>1.e-8)
-  ?juce::jlimit(0.01f,32.f,(float)(original/reconstructedPeak)):1.f;
- clipMakeup.store(makeup,std::memory_order_release);
- clipCalibratedReduction=reduction;
- clipReady.store(true,std::memory_order_release);
-}
 void DrumBusProcessor::timerCallback(){
- calibrateClipper();
  const float length=*state.getRawParameterValue("reverbLength");
  if(length!=lastReverbLength){loadScaledReverb(length);lastReverbLength=length;}
 
- if(clipReady.load(std::memory_order_acquire) && *state.getRawParameterValue("clipListen")>0.5f)
-  if(auto* p=state.getParameter("clipListen"))p->setValueNotifyingHost(0.f);
+ if(!readyToMatch.load(std::memory_order_acquire) && (eqCrossfading.load(std::memory_order_acquire)||pendingEqBank.load(std::memory_order_acquire)>=0))return;
  if(!readyToMatch.exchange(false)){
   const float strength=*state.getRawParameterValue("strength");
   if(matched.load(std::memory_order_acquire) && strength!=lastStrength){
@@ -325,13 +426,12 @@ void DrumBusProcessor::timerCallback(){
  }
  lastStrength=*state.getRawParameterValue("strength");
  buildMatch();
- if(clipReady.load(std::memory_order_acquire) && *state.getRawParameterValue("clipListen")>0.5f)
-  if(auto* p=state.getParameter("clipListen"))p->setValueNotifyingHost(0.f);
  // Toggle analyse off through the host-visible parameter; next listen activation
  // should reset the capture explicitly in a later revision.
  if(auto* p=state.getParameter("listen"))p->setValueNotifyingHost(0.f);
 }
 void DrumBusProcessor::buildMatch(){
+ if(eqCrossfading.load(std::memory_order_acquire)||pendingEqBank.load(std::memory_order_acquire)>=0)return;
  input.fill(0.0);
  int frames=0;
  const int total=capturedCount.load(std::memory_order_acquire);
@@ -375,19 +475,24 @@ void DrumBusProcessor::buildMatch(){
  // Do not subtract the largest narrow-band boost from the entire signal.
  // Keep unity output trim; the host must retain sufficient headroom.
  const float newOutputGain=1.f;
+ const int next=1-activeEqBank.load(std::memory_order_acquire);
+ // The inactive bank is not accessed by the audio thread outside a fade.
  juce::SpinLock::ScopedLockType lock(eqLock);
  for(int b=0;b<bands;++b){
   const double f=25.0*std::pow(20000.0/25.0,(b+0.5)/(double)bands);
   frequencies[b]=f;
-  const float gain=gains[(size_t)b];
   const float center=(float)juce::jmin(f,rate*0.45);
-  auto coeff=juce::dsp::IIR::Coefficients<float>::makePeakFilter(rate,center,4.0f,juce::Decibels::decibelsToGain(gain));
-  for(int c=0;c<2;++c)*eq[(size_t)c][(size_t)b].coefficients=*coeff;
+  auto coeff=juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+   rate,center,4.0f,juce::Decibels::decibelsToGain(gains[(size_t)b]));
+  for(int c=0;c<2;++c)*eqBanks[(size_t)next][(size_t)c][(size_t)b].coefficients=*coeff;
  }
- for(auto& channel:eq)for(auto& filter:channel)filter.reset();
+ for(auto& channel:eqBanks[(size_t)next])for(auto& filter:channel)filter.reset();
  eqOutputGain=newOutputGain;
- matched.store(true,std::memory_order_release);
+ savedMatchGains=gains;
+ savedMatchValid=true;
+ pendingEqBank.store(next,std::memory_order_release);
 }
+
 bool DrumBusProcessor::getEqResponse(EqResponse& response){
  if(!matched.load(std::memory_order_acquire)){
   response.fill(0.f);
@@ -408,7 +513,7 @@ bool DrumBusProcessor::getEqResponse(EqResponse& response){
   const double hz=20.0*std::pow(1000.0,(double)i/(eqDisplayPoints-1));
   if(hz>=nyquist){nextResponse[(size_t)i]=0.f;continue;}
   double magnitude=1.0;
-  for(const auto& filter:eq[0]){
+  for(const auto& filter:eqBanks[(size_t)activeEqBank.load(std::memory_order_acquire)][0]){
    magnitude*=filter.coefficients->getMagnitudeForFrequency(hz,rate);
   }
   // Magnitude of dry/wet mixing, excluding time-varying RMS level trim.
@@ -418,12 +523,64 @@ bool DrumBusProcessor::getEqResponse(EqResponse& response){
  response=nextResponse;
  return true;
 }
+void DrumBusProcessor::restoreSavedMatch(){
+ juce::SpinLock::ScopedLockType lock(eqLock);
+ if(!savedMatchValid)return;
+ // Prepare the inactive bank. The audio thread activates it via the
+ // existing 50 ms crossfade, without depending on a GUI timer.
+ const int next=1-activeEqBank.load(std::memory_order_acquire);
+ for(int b=0;b<bands;++b){
+  const double f=25.0*std::pow(20000.0/25.0,(b+0.5)/(double)bands);
+  frequencies[(size_t)b]=f;
+  auto coeff=juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+   rate,(float)juce::jmin(f,rate*0.45),4.0f,
+   juce::Decibels::decibelsToGain(savedMatchGains[(size_t)b]));
+  for(int c=0;c<2;++c)
+   *eqBanks[(size_t)next][(size_t)c][(size_t)b].coefficients=*coeff;
+ }
+ for(auto& channel:eqBanks[(size_t)next])
+  for(auto& filter:channel)filter.reset();
+ pendingEqBank.store(next,std::memory_order_release);
+}
 void DrumBusProcessor::getStateInformation(juce::MemoryBlock& out){
- auto xml=state.copyState().createXml();copyXmlToBinary(*xml,out);
+ auto xml=state.copyState().createXml();
+ {
+  juce::SpinLock::ScopedLockType lock(eqLock);
+  auto* eqState=xml->createNewChildElement("MATCH_EQ_SNAPSHOT");
+  eqState->setAttribute("valid",savedMatchValid);
+  if(savedMatchValid)
+   for(int b=0;b<bands;++b)
+    eqState->setAttribute("band"+juce::String(b),(double)savedMatchGains[(size_t)b]);
+ }
+ copyXmlToBinary(*xml,out);
 }
 void DrumBusProcessor::setStateInformation(const void* d,int n){
  auto xml=getXmlFromBinary(d,n);
- if(xml&&xml->hasTagName(state.state.getType()))state.replaceState(juce::ValueTree::fromXml(*xml));
+ if(!xml||!xml->hasTagName(state.state.getType()))return;
+ state.replaceState(juce::ValueTree::fromXml(*xml));
+ {
+  juce::SpinLock::ScopedLockType lock(eqLock);
+  savedMatchValid=false;
+  if(const auto* eqState=xml->getChildByName("MATCH_EQ_SNAPSHOT")){
+   if(eqState->getBoolAttribute("valid",false)){
+    bool valid=true;
+    std::array<float,bands> restored{};
+    for(int b=0;b<bands;++b){
+     const auto name="band"+juce::String(b);
+     if(!eqState->hasAttribute(name)){valid=false;break;}
+     const double value=eqState->getDoubleAttribute(name);
+     if(!std::isfinite(value)||value<-30.0||value>30.0){valid=false;break;}
+     restored[(size_t)b]=(float)value;
+    }
+    if(valid){savedMatchGains=restored;savedMatchValid=true;}
+   }
+  }
+ }
+ if(savedMatchValid)restoreSavedMatch();
+ else{
+  matched.store(false,std::memory_order_release);
+  pendingEqBank.store(-1,std::memory_order_release);
+ }
 }
 juce::AudioProcessorEditor* DrumBusProcessor::createEditor(){return new DrumBusEditor(*this);}
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter(){return new DrumBusProcessor();}
