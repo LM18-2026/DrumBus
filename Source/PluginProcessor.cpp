@@ -105,7 +105,9 @@ void DrumBusProcessor::prepareToPlay(double sr,int block){
  analysisPercent.store(0);
  wasListening=false;
  lastStrength=*state.getRawParameterValue("strength");
- for(auto& channel:eq)for(auto& filter:channel)filter.reset();
+ for(auto& bank:eqBanks)for(auto& channel:bank)for(auto& filter:channel)filter.reset();
+ activeEqBank.store(0);pendingEqBank.store(-1);eqCrossfading.store(false);eqFadeRemaining=0;
+ eqFadeTotal=juce::jmax(1,(int)std::round(sr*0.05));
  analyseReference();
 }
 void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiBuffer&){
@@ -146,18 +148,39 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  }
  const float blend=juce::jlimit(0.f,1.f,*state.getRawParameterValue("blend")/100.f);
  const bool eqActive=blend>0.f && *state.getRawParameterValue("enable")>0.5f && matched.load(std::memory_order_acquire);
- // Minimum-phase IIR only; no FIR, no added latency.
- if(n<=processed.getNumSamples() && eqActive){
-  juce::SpinLock::ScopedTryLockType lock(eqLock);
-  if(lock.isLocked()){
+ // All coefficient updates happen in an inactive bank on the message thread.
+ // The audio thread owns filter states and crossfades for 50 ms.
+ const int requested=pendingEqBank.exchange(-1,std::memory_order_acq_rel);
+ if(requested>=0){
+  eqFadeFrom=activeEqBank.load(std::memory_order_relaxed);
+  eqFadeTo=requested;
+  eqFadeFromDry=!matched.load(std::memory_order_acquire);
+  eqFadeRemaining=eqFadeTotal;
+  eqCrossfading.store(true,std::memory_order_release);
+  matched.store(true,std::memory_order_release);
+ }
+ if(n<=processed.getNumSamples() && (eqActive||eqFadeRemaining>0)){
+  for(int i=0;i<n;++i){
+   const bool fading=eqFadeRemaining>0;
+   const float cross=fading ? 1.f-(float)eqFadeRemaining/(float)eqFadeTotal : 1.f;
+   const int active=activeEqBank.load(std::memory_order_relaxed);
    for(int c=0;c<2;++c){
     auto* data=buffer.getWritePointer(c);
-    for(int i=0;i<n;++i){
-     const float dry=data[i];
-     float wet=dry;
-     for(auto& filter:eq[(size_t)c])wet=filter.processSample(wet);
-     data[i]=dry*(1.f-blend)+wet*blend;
+    const float dry=data[i];
+    float wet=dry;
+    if(fading){
+     float from=dry,to=dry;
+     if(!eqFadeFromDry)for(auto& filter:eqBanks[(size_t)eqFadeFrom][(size_t)c])from=filter.processSample(from);
+     for(auto& filter:eqBanks[(size_t)eqFadeTo][(size_t)c])to=filter.processSample(to);
+     wet=from+(to-from)*cross;
+    }else if(eqActive){
+     for(auto& filter:eqBanks[(size_t)active][(size_t)c])wet=filter.processSample(wet);
     }
+    data[i]=dry*(1.f-blend)+wet*blend;
+   }
+   if(fading && --eqFadeRemaining==0){
+    activeEqBank.store(eqFadeTo,std::memory_order_release);
+    eqCrossfading.store(false,std::memory_order_release);
    }
   }
  }
@@ -353,6 +376,7 @@ void DrumBusProcessor::timerCallback(){
 
  if(clipReady.load(std::memory_order_acquire) && *state.getRawParameterValue("clipListen")>0.5f)
   if(auto* p=state.getParameter("clipListen"))p->setValueNotifyingHost(0.f);
+ if(!readyToMatch.load(std::memory_order_acquire) && (eqCrossfading.load(std::memory_order_acquire)||pendingEqBank.load(std::memory_order_acquire)>=0))return;
  if(!readyToMatch.exchange(false)){
   const float strength=*state.getRawParameterValue("strength");
   if(matched.load(std::memory_order_acquire) && strength!=lastStrength){
@@ -370,6 +394,7 @@ void DrumBusProcessor::timerCallback(){
  if(auto* p=state.getParameter("listen"))p->setValueNotifyingHost(0.f);
 }
 void DrumBusProcessor::buildMatch(){
+ if(eqCrossfading.load(std::memory_order_acquire)||pendingEqBank.load(std::memory_order_acquire)>=0)return;
  input.fill(0.0);
  int frames=0;
  const int total=capturedCount.load(std::memory_order_acquire);
@@ -413,18 +438,20 @@ void DrumBusProcessor::buildMatch(){
  // Do not subtract the largest narrow-band boost from the entire signal.
  // Keep unity output trim; the host must retain sufficient headroom.
  const float newOutputGain=1.f;
+ const int next=1-activeEqBank.load(std::memory_order_acquire);
+ // The inactive bank is not accessed by the audio thread outside a fade.
  juce::SpinLock::ScopedLockType lock(eqLock);
  for(int b=0;b<bands;++b){
   const double f=25.0*std::pow(20000.0/25.0,(b+0.5)/(double)bands);
   frequencies[b]=f;
-  const float gain=gains[(size_t)b];
   const float center=(float)juce::jmin(f,rate*0.45);
-  auto coeff=juce::dsp::IIR::Coefficients<float>::makePeakFilter(rate,center,4.0f,juce::Decibels::decibelsToGain(gain));
-  for(int c=0;c<2;++c)*eq[(size_t)c][(size_t)b].coefficients=*coeff;
+  auto coeff=juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+   rate,center,4.0f,juce::Decibels::decibelsToGain(gains[(size_t)b]));
+  for(int c=0;c<2;++c)*eqBanks[(size_t)next][(size_t)c][(size_t)b].coefficients=*coeff;
  }
- for(auto& channel:eq)for(auto& filter:channel)filter.reset();
+ for(auto& channel:eqBanks[(size_t)next])for(auto& filter:channel)filter.reset();
  eqOutputGain=newOutputGain;
- matched.store(true,std::memory_order_release);
+ pendingEqBank.store(next,std::memory_order_release);
 }
 
 bool DrumBusProcessor::getEqResponse(EqResponse& response){
@@ -447,7 +474,7 @@ bool DrumBusProcessor::getEqResponse(EqResponse& response){
   const double hz=20.0*std::pow(1000.0,(double)i/(eqDisplayPoints-1));
   if(hz>=nyquist){nextResponse[(size_t)i]=0.f;continue;}
   double magnitude=1.0;
-  for(const auto& filter:eq[0]){
+  for(const auto& filter:eqBanks[(size_t)activeEqBank.load(std::memory_order_acquire)][0]){
    magnitude*=filter.coefficients->getMagnitudeForFrequency(hz,rate);
   }
   // Magnitude of dry/wet mixing, excluding time-varying RMS level trim.
