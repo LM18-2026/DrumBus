@@ -44,10 +44,13 @@ private:
  void analyseReference();
  void loadScaledReverb(float lengthControl);
  void buildMatch();
+ void restoreSavedMatch();
  void analyseFrame(const float* samples,std::array<double,bands>& totals);
  int bandForFrequency(double hz) const;
  juce::dsp::FFT fft{fftOrder};
  std::array<double,bands> reference{},input{},frequencies{};
+ std::array<float,bands> savedMatchGains{};
+ bool savedMatchValid=false;
  std::array<float,fftSize> window{},frame{};
  std::array<float,fftSize*2> fftData{};
  using EqBank=std::array<std::array<juce::dsp::IIR::Filter<float>,bands>,2>;
