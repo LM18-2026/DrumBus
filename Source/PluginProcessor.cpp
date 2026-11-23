@@ -20,6 +20,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumBusProcessor::params(){
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"reverbLength",1},"Reverb IR Length",juce::NormalisableRange<float>(-100.f,100.f,1.f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"reverbEnable",1},"Reverb Enabled",true));
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"compEnable",1},"FET Compressor Enabled",false));
+ p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"compMode",1},"FET Channel Mode",juce::StringArray{"Stereo","Dual Mono"},0));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"compInput",1},"FET Input dB",juce::NormalisableRange<float>(-24.f,24.f,0.1f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"compOutput",1},"FET Output dB",juce::NormalisableRange<float>(-18.f,18.f,0.1f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"compAttack",1},"FET Attack ms",juce::NormalisableRange<float>(0.02f,0.8f,0.01f),0.3f));
@@ -84,7 +85,10 @@ void DrumBusProcessor::prepareToPlay(double sr,int block){
  rmsInputSum=rmsOutputSum=0.0;rmsSamples=0;rmsTrim=1.f;
  rmsTrimSmooth.reset(sr,0.15);rmsTrimSmooth.setCurrentAndTargetValue(1.f);
  setLatencySamples(0);
- compEnvelope=0.f;compGainDb=0.f;compGrVuState=0.f;compReductionDb.store(0.f);compGrVuDb.store(0.f);
+ compEnvelope.fill(0.f);compGainDb.fill(0.f);compStereoEnvelope=0.f;compStereoGainDb=0.f;
+ compGrVuState=0.f;compReductionDb.store(0.f);compGrVuDb.store(0.f);
+ compModeSmooth.reset(sr,0.03);
+ compModeSmooth.setCurrentAndTargetValue(state.getRawParameterValue("compMode")->load()>0.5f?1.f:0.f);
  compEnableSmooth.reset(sr,0.02);compEnableSmooth.setCurrentAndTargetValue(0.f);
  loadScaledReverb(0.f);
  captured.clear();
@@ -190,9 +194,10 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
    }
   }
  }
- // Stereo-linked feedback-inspired FET compressor, fixed -18 dBFS threshold.
- // One shared detector preserves the stereo image.
+ // Two independent detectors run continuously alongside the stereo-linked
+ // detector. Crossfade their gain laws over 30 ms when changing modes.
  const bool compOn=state.getRawParameterValue("compEnable")->load()>0.5f;
+ const bool dualMono=state.getRawParameterValue("compMode")->load()>0.5f;
  const float inputGain=juce::Decibels::decibelsToGain(state.getRawParameterValue("compInput")->load());
  const float outputGain=juce::Decibels::decibelsToGain(state.getRawParameterValue("compOutput")->load());
  const float attackMs=juce::jlimit(0.02f,0.8f,state.getRawParameterValue("compAttack")->load());
@@ -202,34 +207,42 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  const float ratio=ratios[ratioIndex];
  const float attackCoeff=std::exp(-1.f/(float)(rate*attackMs*0.001));
  const float releaseCoeff=std::exp(-1.f/(float)(rate*releaseMs*0.001));
- // GR meter ballistics: 300 ms attack, 500 ms recovery.
  const float grVuAttack=std::exp(-1.f/(float)(rate*0.3));
  const float grVuRelease=std::exp(-1.f/(float)(rate*0.5));
+ const auto updateDetector=[&](float detector,float& envelope,float& gainReduction){
+  const float coeff=detector>envelope?attackCoeff:releaseCoeff;
+  envelope=coeff*envelope+(1.f-coeff)*detector;
+  const float levelDb=juce::Decibels::gainToDecibels(juce::jmax(envelope,1.e-8f),-160.f);
+  const float over=levelDb+18.f;
+  float targetReduction=0.f;
+  if(over>1.5f)targetReduction=over*(1.f-1.f/ratio);
+  else if(over>-1.5f){const float x=over+1.5f;targetReduction=x*x*(1.f-1.f/ratio)/6.f;}
+  const float gainCoeff=targetReduction>gainReduction?attackCoeff:releaseCoeff;
+  gainReduction=gainCoeff*gainReduction+(1.f-gainCoeff)*targetReduction;
+ };
  compEnableSmooth.setTargetValue(compOn?1.f:0.f);
+ compModeSmooth.setTargetValue(dualMono?1.f:0.f);
+ float displayGr=0.f;
  for(int i=0;i<n;++i){
   const float l=buffer.getSample(0,i),r=buffer.getSample(1,i);
   const float drivenL=l*inputGain,drivenR=r*inputGain;
-  const float detector=juce::jmax(std::abs(drivenL),std::abs(drivenR));
-  const float coeff=detector>compEnvelope?attackCoeff:releaseCoeff;
-  compEnvelope=coeff*compEnvelope+(1.f-coeff)*detector;
-  const float levelDb=juce::Decibels::gainToDecibels(juce::jmax(compEnvelope,1.e-8f),-160.f);
-  const float over=levelDb+18.f;
-  // 3 dB soft knee, then feed-forward FET-style gain law.
-  float targetReduction=0.f;
-  if(over>1.5f)targetReduction=(over)*(1.f-1.f/ratio);
-  else if(over>-1.5f){const float x=over+1.5f;targetReduction=x*x*(1.f-1.f/ratio)/6.f;}
-  const float gainCoeff=targetReduction>compGainDb?attackCoeff:releaseCoeff;
-  compGainDb=gainCoeff*compGainDb+(1.f-gainCoeff)*targetReduction;
-  const float grTarget=compGainDb*compEnableSmooth.getCurrentValue();
-  const float grCoeff=grTarget>compGrVuState?grVuAttack:grVuRelease;
-  compGrVuState=grCoeff*compGrVuState+(1.f-grCoeff)*grTarget;
-  const float gain=juce::Decibels::decibelsToGain(-compGainDb)*outputGain;
-  const float wetL=drivenL*gain,wetR=drivenR*gain;
+  updateDetector(juce::jmax(std::abs(drivenL),std::abs(drivenR)),compStereoEnvelope,compStereoGainDb);
+  updateDetector(std::abs(drivenL),compEnvelope[0],compGainDb[0]);
+  updateDetector(std::abs(drivenR),compEnvelope[1],compGainDb[1]);
+  const float modeMix=compModeSmooth.getNextValue();
+  const float grL=compStereoGainDb+(compGainDb[0]-compStereoGainDb)*modeMix;
+  const float grR=compStereoGainDb+(compGainDb[1]-compStereoGainDb)*modeMix;
+  const float wetL=drivenL*juce::Decibels::decibelsToGain(-grL)*outputGain;
+  const float wetR=drivenR*juce::Decibels::decibelsToGain(-grR)*outputGain;
   const float mix=compEnableSmooth.getNextValue();
   buffer.setSample(0,i,l+(wetL-l)*mix);
   buffer.setSample(1,i,r+(wetR-r)*mix);
+  // In dual mono the single GR display shows the greater reduction.
+  displayGr=juce::jmax(grL,grR)*mix;
+  const float grCoeff=displayGr>compGrVuState?grVuAttack:grVuRelease;
+  compGrVuState=grCoeff*compGrVuState+(1.f-grCoeff)*displayGr;
  }
- compReductionDb.store(compOn?compGainDb:0.f,std::memory_order_relaxed);
+ compReductionDb.store(displayGr,std::memory_order_relaxed);
  compGrVuDb.store(compGrVuState,std::memory_order_relaxed);
  // Compare the same five-second input window with the complete DSP output.
  if(listening && rmsSamples<captureSize){
