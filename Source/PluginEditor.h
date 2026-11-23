@@ -15,9 +15,8 @@ private:
  juce::ToggleButton reverbEnabled{"REVERB ON"},clipEnabled{"CLIPPER ON"};
  juce::TextButton clipListen{"CLIP LISTEN (5 s)"};
  juce::Slider clipReduction;
- juce::ComboBox phase;
+ juce::TextButton meterReset{"RESET"};
  std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> enableAttachment;
- std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> phaseAttachment;
  std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> blendAttachment,depthAttachment,reverbWetAttachment,reverbLengthAttachment;
  std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> reverbEnableAttachment,clipEnableAttachment;
  std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> clipReductionAttachment;
