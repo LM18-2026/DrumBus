@@ -17,9 +17,9 @@ jobs:
         run: |
           $plugin = Get-ChildItem build -Recurse -Directory -Filter 'LM18 DrumBus.vst3' | Select-Object -First 1
           if (-not $plugin) { throw 'LM18 DrumBus.vst3 not found' }
-          Compress-Archive -Path $plugin.FullName -DestinationPath DrumBus-V0.28-Windows.zip
+          Compress-Archive -Path $plugin.FullName -DestinationPath DrumBus-V0.29-Windows.zip
       - uses: actions/upload-artifact@v5
         with:
-          name: DrumBus-V0.28-Windows
-          path: DrumBus-V0.28-Windows.zip
+          name: DrumBus-V0.29-Windows
+          path: DrumBus-V0.29-Windows.zip
           if-no-files-found: error
