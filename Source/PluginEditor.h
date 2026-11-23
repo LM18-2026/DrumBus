@@ -16,14 +16,14 @@ private:
  int grNumericTicks=0;
  float grNumericDisplayed=0.f;
  juce::TextButton analyse{"EQ LISTEN (5 s)"};
- juce::ToggleButton enabled{"MATCH EQ"};
- juce::Slider blend,depth,reverbWet,reverbLength;
+ juce::ToggleButton enabled{"MATCH EQ"},tiltEnabled{"TILT EQ"};
+ juce::Slider blend,depth,tiltAmount,reverbWet,reverbLength;
  juce::ToggleButton reverbEnabled{"REVERB ON"},compEnabled{"COMPRESSOR ON"};
  juce::Slider compInput,compOutput,compAttack,compRelease;
  juce::ComboBox compRatio,compMode;
  juce::TextButton meterReset{"RESET"};
- std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> enableAttachment;
- std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> blendAttachment,depthAttachment,reverbWetAttachment,reverbLengthAttachment;
+ std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> enableAttachment,tiltEnabledAttachment;
+ std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> blendAttachment,depthAttachment,tiltAmountAttachment,reverbWetAttachment,reverbLengthAttachment;
  std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> reverbEnableAttachment,compEnableAttachment;
  std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> compInputAttachment,compOutputAttachment,compAttackAttachment,compReleaseAttachment;
  std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> compRatioAttachment,compModeAttachment;
