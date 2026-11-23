@@ -51,7 +51,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("LM18 DrumBus",25,15,480,45,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));
  g.setFont(juce::Font(juce::FontOptions(16.f)));
- g.drawText("V0.24  |  GUI",1030,20,140,30,juce::Justification::centredRight);
+ g.drawText("V0.25  |  GUI",1030,20,140,30,juce::Justification::centredRight);
  auto section=[&](juce::Rectangle<int> r,const juce::String& title){
   g.setColour(panel);g.fillRoundedRectangle(r.toFloat(),12.f);
   g.setColour(line);g.drawRoundedRectangle(r.toFloat().reduced(1.f),12.f,1.5f);
@@ -114,7 +114,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.setColour(juce::Colours::white);g.setFont(juce::Font(juce::FontOptions(13.f).withStyle("Bold")));
  g.drawText("GR",892,395,42,20,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));g.setFont(juce::Font(juce::FontOptions(12.f)));
- g.drawText(juce::String(processor.compReductionDb.load(),1)+" dB",1080,395,72,20,juce::Justification::centredRight);
+ g.drawText(juce::String(grNumericDisplayed,1)+" dB",1080,395,72,20,juce::Justification::centredRight);
  g.setColour(juce::Colour(0xff243343));g.fillRoundedRectangle(grTrack,3.f);
  if(gr>0.01f){
   g.setColour(juce::Colour(0xff3dbadf));
