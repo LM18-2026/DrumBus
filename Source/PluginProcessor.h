@@ -45,6 +45,7 @@ private:
  void loadScaledReverb(float lengthControl);
  void buildMatch();
  void calibrateClipper();
+ void buildLinearKernel();
  void analyseFrame(const float* samples,std::array<double,bands>& totals);
  int bandForFrequency(double hz) const;
  juce::dsp::FFT fft{fftOrder};
@@ -57,6 +58,17 @@ private:
  juce::SmoothedValue<float> reverbMix;
  float lastReverbLength=0.f;
  float eqLevelGain=1.f;
+ static constexpr int firLength=513, firDelay=(firLength-1)/2;
+ std::array<float,firLength> firKernel{};
+ std::array<std::array<float,firLength>,2> firHistory{};
+ int firPosition=0;
+ std::array<std::array<float,firDelay+1>,2> dryDelay{};
+ int dryPosition=0;
+ std::array<std::array<float,firDelay+1>,2> iirDelay{};
+ double rmsInputSum=0.0,rmsOutputSum=0.0;
+ int rmsSamples=0;
+ float rmsTrim=1.f;
+ juce::SmoothedValue<float,juce::ValueSmoothingTypes::Multiplicative> rmsTrimSmooth;
  std::array<juce::dsp::IIR::Filter<float>,2> clipPre,clipPost,clipPostClean;
  float clipThreshold=1.f;
  float clipObservedPeak=0.f;
