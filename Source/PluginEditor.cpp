@@ -3,8 +3,10 @@ DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p)
  setSize(1200,620);
  addAndMakeVisible(meterReset);
  meterReset.onClick=[this]{processor.resetMeters();};
- addAndMakeVisible(analyse);addAndMakeVisible(enabled);addAndMakeVisible(blend);addAndMakeVisible(depth);addAndMakeVisible(reverbWet);addAndMakeVisible(reverbLength);addAndMakeVisible(reverbEnabled);addAndMakeVisible(compEnabled);addAndMakeVisible(compInput);addAndMakeVisible(compOutput);addAndMakeVisible(compAttack);addAndMakeVisible(compRelease);addAndMakeVisible(compRatio);
+ addAndMakeVisible(analyse);addAndMakeVisible(enabled);addAndMakeVisible(blend);addAndMakeVisible(depth);addAndMakeVisible(reverbWet);addAndMakeVisible(reverbLength);addAndMakeVisible(reverbEnabled);addAndMakeVisible(compEnabled);addAndMakeVisible(compInput);addAndMakeVisible(compOutput);addAndMakeVisible(compAttack);addAndMakeVisible(compRelease);addAndMakeVisible(compRatio);addAndMakeVisible(compMode);
  compEnableAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"compEnable",compEnabled);
+ compMode.addItem("STEREO",1);compMode.addItem("DUAL MONO",2);
+ compModeAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.state,"compMode",compMode);
  auto setup=[&](juce::Slider& slider,const juce::String& id){
   slider.setSliderStyle(juce::Slider::LinearHorizontal);
   slider.setTextBoxStyle(juce::Slider::TextBoxRight,false,66,23);
@@ -51,7 +53,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("LM18 DrumBus",25,15,480,45,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));
  g.setFont(juce::Font(juce::FontOptions(16.f)));
- g.drawText("V0.25  |  GUI",1030,20,140,30,juce::Justification::centredRight);
+ g.drawText("V0.26  |  GUI",1030,20,140,30,juce::Justification::centredRight);
  auto section=[&](juce::Rectangle<int> r,const juce::String& title){
   g.setColour(panel);g.fillRoundedRectangle(r.toFloat(),12.f);
   g.setColour(line);g.drawRoundedRectangle(r.toFloat().reduced(1.f),12.f,1.5f);
@@ -102,7 +104,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("LENGTH",734,172,116,25,juce::Justification::centred);
  g.drawText("-100 ... +100",734,335,116,22,juce::Justification::centred);
  g.drawText("Room: LexRoom1.wav",610,407,240,32,juce::Justification::centred);
- g.drawText("1176-STYLE  |  STEREO LINK",890,137,275,25,juce::Justification::centred);
+ g.drawText("1176-STYLE",888,137,120,25,juce::Justification::centredLeft);
  g.drawText("INPUT",888,180,78,25,juce::Justification::centredLeft);
  g.drawText("OUTPUT",888,225,78,25,juce::Justification::centredLeft);
  g.drawText("ATTACK",888,270,78,25,juce::Justification::centredLeft);
@@ -157,5 +159,6 @@ void DrumBusEditor::resized(){
  compAttack.setBounds(965,266,195,34);
  compRelease.setBounds(965,311,195,34);
  compRatio.setBounds(965,357,195,31);
+ compMode.setBounds(1012,135,148,29);
  compEnabled.setBounds(962,455,190,30);
 }
