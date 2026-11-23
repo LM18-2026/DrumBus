@@ -16,6 +16,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumBusProcessor::params(){
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"enable",1},"Match EQ",true));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"blend",1},"EQ Blend",juce::NormalisableRange<float>(0.f,100.f,1.f),100.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"strength",1},"Match Depth",juce::NormalisableRange<float>(0.f,100.f,1.f),35.f));
+ p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"tiltEnable",1},"Tilt EQ Enabled",false));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"tiltDb",1},"Tilt dB",juce::NormalisableRange<float>(-6.f,6.f,0.1f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"reverbMix",1},"Reverb Dry Wet",juce::NormalisableRange<float>(0.f,100.f,1.f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"reverbLength",1},"Reverb IR Length",juce::NormalisableRange<float>(-100.f,100.f,1.f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"reverbEnable",1},"Reverb Enabled",true));
@@ -85,6 +87,9 @@ void DrumBusProcessor::prepareToPlay(double sr,int block){
  rmsInputSum=rmsOutputSum=0.0;rmsSamples=0;rmsTrim=1.f;
  rmsTrimSmooth.reset(sr,0.15);rmsTrimSmooth.setCurrentAndTargetValue(1.f);
  setLatencySamples(0);
+ tiltLowState.fill(0.f);
+ tiltGainSmooth.reset(sr,0.025);tiltGainSmooth.setCurrentAndTargetValue(0.f);
+ tiltLowCoeff=(float)std::exp(-juce::MathConstants<double>::twoPi*1000.0/sr);
  compEnvelope.fill(0.f);compGainDb.fill(0.f);compStereoEnvelope=0.f;compStereoGainDb=0.f;
  compGrVuState=0.f;compReductionDb.store(0.f);compGrVuDb.store(0.f);
  compModeSmooth.reset(sr,0.03);
@@ -175,6 +180,22 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
     activeEqBank.store(eqFadeTo,std::memory_order_release);
     eqCrossfading.store(false,std::memory_order_release);
    }
+  }
+ }
+ // Independent post-Match tilt EQ, first-order complementary low/high split.
+ // At 0 dB both paths sum exactly to the unprocessed signal.
+ const bool tiltOn=state.getRawParameterValue("tiltEnable")->load()>0.5f;
+ const float tiltTarget=tiltOn?state.getRawParameterValue("tiltDb")->load():0.f;
+ tiltGainSmooth.setTargetValue(tiltTarget);
+ for(int i=0;i<n;++i){
+  const float db=tiltGainSmooth.getNextValue();
+  const float lowGain=juce::Decibels::decibelsToGain(-db);
+  const float highGain=juce::Decibels::decibelsToGain(db);
+  for(int c=0;c<2;++c){
+   const float x=buffer.getSample(c,i);
+   const float low=tiltLowCoeff*tiltLowState[(size_t)c]+(1.f-tiltLowCoeff)*x;
+   tiltLowState[(size_t)c]=low;
+   buffer.setSample(c,i,low*lowGain+(x-low)*highGain);
   }
  }
  // Feed convolution every block to preserve tails and continuity.
