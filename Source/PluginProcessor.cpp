@@ -107,6 +107,7 @@ void DrumBusProcessor::prepareToPlay(double sr,int block){
  activeEqBank.store(0);pendingEqBank.store(-1);eqCrossfading.store(false);eqFadeRemaining=0;
  eqFadeTotal=juce::jmax(1,(int)std::round(sr*0.05));
  analyseReference();
+ restoreSavedMatch();
 }
 void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiBuffer&){
  juce::ScopedNoDenormals nd;
@@ -430,6 +431,8 @@ void DrumBusProcessor::buildMatch(){
  }
  for(auto& channel:eqBanks[(size_t)next])for(auto& filter:channel)filter.reset();
  eqOutputGain=newOutputGain;
+ savedMatchGains=gains;
+ savedMatchValid=true;
  pendingEqBank.store(next,std::memory_order_release);
 }
 
@@ -463,12 +466,64 @@ bool DrumBusProcessor::getEqResponse(EqResponse& response){
  response=nextResponse;
  return true;
 }
+void DrumBusProcessor::restoreSavedMatch(){
+ juce::SpinLock::ScopedLockType lock(eqLock);
+ if(!savedMatchValid)return;
+ // Prepare the inactive bank. The audio thread activates it via the
+ // existing 50 ms crossfade, without depending on a GUI timer.
+ const int next=1-activeEqBank.load(std::memory_order_acquire);
+ for(int b=0;b<bands;++b){
+  const double f=25.0*std::pow(20000.0/25.0,(b+0.5)/(double)bands);
+  frequencies[(size_t)b]=f;
+  auto coeff=juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+   rate,(float)juce::jmin(f,rate*0.45),4.0f,
+   juce::Decibels::decibelsToGain(savedMatchGains[(size_t)b]));
+  for(int c=0;c<2;++c)
+   *eqBanks[(size_t)next][(size_t)c][(size_t)b].coefficients=*coeff;
+ }
+ for(auto& channel:eqBanks[(size_t)next])
+  for(auto& filter:channel)filter.reset();
+ pendingEqBank.store(next,std::memory_order_release);
+}
 void DrumBusProcessor::getStateInformation(juce::MemoryBlock& out){
- auto xml=state.copyState().createXml();copyXmlToBinary(*xml,out);
+ auto xml=state.copyState().createXml();
+ {
+  juce::SpinLock::ScopedLockType lock(eqLock);
+  auto* eqState=xml->createNewChildElement("MATCH_EQ_SNAPSHOT");
+  eqState->setAttribute("valid",savedMatchValid);
+  if(savedMatchValid)
+   for(int b=0;b<bands;++b)
+    eqState->setAttribute("band"+juce::String(b),(double)savedMatchGains[(size_t)b]);
+ }
+ copyXmlToBinary(*xml,out);
 }
 void DrumBusProcessor::setStateInformation(const void* d,int n){
  auto xml=getXmlFromBinary(d,n);
- if(xml&&xml->hasTagName(state.state.getType()))state.replaceState(juce::ValueTree::fromXml(*xml));
+ if(!xml||!xml->hasTagName(state.state.getType()))return;
+ state.replaceState(juce::ValueTree::fromXml(*xml));
+ {
+  juce::SpinLock::ScopedLockType lock(eqLock);
+  savedMatchValid=false;
+  if(const auto* eqState=xml->getChildByName("MATCH_EQ_SNAPSHOT")){
+   if(eqState->getBoolAttribute("valid",false)){
+    bool valid=true;
+    std::array<float,bands> restored{};
+    for(int b=0;b<bands;++b){
+     const auto name="band"+juce::String(b);
+     if(!eqState->hasAttribute(name)){valid=false;break;}
+     const double value=eqState->getDoubleAttribute(name);
+     if(!std::isfinite(value)||value<-30.0||value>30.0){valid=false;break;}
+     restored[(size_t)b]=(float)value;
+    }
+    if(valid){savedMatchGains=restored;savedMatchValid=true;}
+   }
+  }
+ }
+ if(savedMatchValid)restoreSavedMatch();
+ else{
+  matched.store(false,std::memory_order_release);
+  pendingEqBank.store(-1,std::memory_order_release);
+ }
 }
 juce::AudioProcessorEditor* DrumBusProcessor::createEditor(){return new DrumBusEditor(*this);}
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter(){return new DrumBusProcessor();}
