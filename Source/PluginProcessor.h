@@ -61,6 +61,9 @@ private:
  juce::SmoothedValue<float> reverbMix;
  float lastReverbLength=0.f;
  float eqLevelGain=1.f;
+ std::array<float,2> tiltLowState{{0.f,0.f}};
+ float tiltLowCoeff=0.f;
+ juce::SmoothedValue<float> tiltGainSmooth;
  double rmsInputSum=0.0,rmsOutputSum=0.0;
  int rmsSamples=0;
  float rmsTrim=1.f;
