@@ -22,6 +22,11 @@ private:
  juce::Slider compInput,compOutput,compAttack,compRelease;
  juce::ComboBox compRatio,compMode;
  juce::TextButton meterReset{"RESET"};
+ juce::ToggleButton sweetEnabled{"SWEETENING ON"};
+ juce::Slider sweetBass,sweetTreble,sweetFreq,sweetGain,sweetQ,sweetSat;
+ std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> sweetEnableAttachment;
+ std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> sweetBassAttachment,sweetTrebleAttachment,
+  sweetFreqAttachment,sweetGainAttachment,sweetQAttachment,sweetSatAttachment;
  std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> enableAttachment,tiltEnabledAttachment;
  std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> blendAttachment,depthAttachment,tiltAmountAttachment,reverbWetAttachment,reverbLengthAttachment;
  std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> reverbEnableAttachment,compEnableAttachment;
