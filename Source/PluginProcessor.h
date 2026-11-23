@@ -30,7 +30,7 @@ public:
  juce::AudioProcessorValueTreeState state;
  std::atomic<int> analysisPercent{0};
  std::atomic<bool> matched{false};
- std::atomic<float> compReductionDb{0.f};
+ std::atomic<float> compReductionDb{0.f},compGrVuDb{0.f};
  std::atomic<float> inputPeakDb{-100.f},outputPeakDb{-100.f},inputRmsDb{-100.f},outputRmsDb{-100.f};
  std::atomic<float> inputVuDb{-100.f},outputVuDb{-100.f};
  void resetMeters() noexcept {metersResetGeneration.fetch_add(1,std::memory_order_release);}
@@ -71,7 +71,7 @@ private:
  double meterInputEnergy=0.0,meterOutputEnergy=0.0;
  juce::uint64 meterFrames=0;
  float meterInputMax=0.f,meterOutputMax=0.f;
- float compEnvelope=0.f,compGainDb=0.f;
+ float compEnvelope=0.f,compGainDb=0.f,compGrVuState=0.f;
  juce::SmoothedValue<float> compEnableSmooth;
  std::atomic<int> capturedCount{0};
  int captureSize=0;
