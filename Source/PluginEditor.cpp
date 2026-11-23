@@ -3,7 +3,7 @@ DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p)
  setSize(1200,620);
  addAndMakeVisible(meterReset);
  meterReset.onClick=[this]{processor.resetMeters();};
- addAndMakeVisible(analyse);addAndMakeVisible(enabled);addAndMakeVisible(blend);addAndMakeVisible(depth);addAndMakeVisible(reverbWet);addAndMakeVisible(reverbLength);addAndMakeVisible(reverbEnabled);addAndMakeVisible(compEnabled);addAndMakeVisible(compInput);addAndMakeVisible(compOutput);addAndMakeVisible(compAttack);addAndMakeVisible(compRelease);addAndMakeVisible(compRatio);addAndMakeVisible(compMode);
+ addAndMakeVisible(analyse);addAndMakeVisible(enabled);addAndMakeVisible(blend);addAndMakeVisible(depth);addAndMakeVisible(tiltAmount);addAndMakeVisible(tiltEnabled);addAndMakeVisible(reverbWet);addAndMakeVisible(reverbLength);addAndMakeVisible(reverbEnabled);addAndMakeVisible(compEnabled);addAndMakeVisible(compInput);addAndMakeVisible(compOutput);addAndMakeVisible(compAttack);addAndMakeVisible(compRelease);addAndMakeVisible(compRatio);addAndMakeVisible(compMode);
  compEnableAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"compEnable",compEnabled);
  compMode.addItem("STEREO",1);compMode.addItem("DUAL MONO",2);
  compModeAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.state,"compMode",compMode);
@@ -32,6 +32,11 @@ DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p)
  depth.setTextBoxStyle(juce::Slider::TextBoxRight,false,65,24);
  depth.setNumDecimalPlacesToDisplay(0);
  depthAttachment=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,"strength",depth);
+ tiltAmount.setSliderStyle(juce::Slider::LinearHorizontal);
+ tiltAmount.setTextBoxStyle(juce::Slider::TextBoxRight,false,65,24);
+ tiltAmount.setNumDecimalPlacesToDisplay(1);
+ tiltAmountAttachment=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,"tiltDb",tiltAmount);
+ tiltEnabledAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"tiltEnable",tiltEnabled);
  reverbWetAttachment=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,"reverbMix",reverbWet);
  reverbLengthAttachment=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,"reverbLength",reverbLength);
  reverbEnableAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"reverbEnable",reverbEnabled);
@@ -53,7 +58,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("LM18 DrumBus",25,15,480,45,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));
  g.setFont(juce::Font(juce::FontOptions(16.f)));
- g.drawText("V0.26  |  GUI",1030,20,140,30,juce::Justification::centredRight);
+ g.drawText("V0.27  |  GUI",1030,20,140,30,juce::Justification::centredRight);
  auto section=[&](juce::Rectangle<int> r,const juce::String& title){
   g.setColour(panel);g.fillRoundedRectangle(r.toFloat(),12.f);
   g.setColour(line);g.drawRoundedRectangle(r.toFloat().reduced(1.f),12.f,1.5f);
@@ -150,6 +155,8 @@ void DrumBusEditor::resized(){
  analyse.setBounds(38,155,145,40);
  blend.setBounds(155,492,390,35);
  depth.setBounds(170,203,375,35);
+ tiltAmount.setBounds(170,259,375,35);
+ tiltEnabled.setBounds(38,259,125,35);
  enabled.setBounds(440,455,125,30);
  reverbWet.setBounds(612,210,116,125);
  reverbLength.setBounds(734,210,116,125);
