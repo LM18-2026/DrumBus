@@ -45,7 +45,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("LM18 DrumBus",25,15,480,45,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));
  g.setFont(juce::Font(juce::FontOptions(16.f)));
- g.drawText("V0.19  |  GUI",1030,20,140,30,juce::Justification::centredRight);
+ g.drawText("V0.20  |  GUI",1030,20,140,30,juce::Justification::centredRight);
  auto section=[&](juce::Rectangle<int> r,const juce::String& title){
   g.setColour(panel);g.fillRoundedRectangle(r.toFloat(),12.f);
   g.setColour(line);g.drawRoundedRectangle(r.toFloat().reduced(1.f),12.f,1.5f);
@@ -100,7 +100,22 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("SHELF  ->  CLIP  ->  INV. SHELF",887,235,280,50,juce::Justification::centred);
  g.drawText("CLIP REDUCTION (dB)",887,325,280,35,juce::Justification::centred);
  g.drawText(processor.clipReady.load()?"CLIP READY":("ANALYSIS  "+juce::String(processor.clipAnalysisPercent.load())+" %"),887,410,280,35,juce::Justification::centred);
- g.setColour(juce::Colour(0xffa8b8ca));g.drawText("IN / OUT METERS  -  planned",20,557,1160,40,juce::Justification::centred);
+ // Compact dBFS meters within the existing bottom strip.
+ auto meter=[&](int x,const juce::String& name,float peak,float rms){
+  const int y=558,w=440,h=14;
+  g.setColour(juce::Colours::white);g.setFont(juce::Font(juce::FontOptions(14.f).withStyle("Bold")));
+  g.drawText(name,x,y-3,50,24,juce::Justification::centredLeft);
+  const int bx=x+55;
+  g.setColour(juce::Colour(0xff243343));g.fillRoundedRectangle((float)bx,(float)y,(float)w,(float)h,3.f);
+  const float peakPos=juce::jlimit(0.f,1.f,(peak+60.f)/60.f);
+  const float rmsPos=juce::jlimit(0.f,1.f,(rms+60.f)/60.f);
+  g.setColour(juce::Colour(0xff3dbadf));g.fillRoundedRectangle((float)bx,(float)y,(float)w*rmsPos,(float)h,3.f);
+  g.setColour(juce::Colours::white);g.drawVerticalLine(bx+(int)(w*peakPos),y-2.f,y+h+2.f);
+  g.setColour(juce::Colour(0xffa8b8ca));g.setFont(juce::Font(juce::FontOptions(12.f)));
+  g.drawText("RMS "+juce::String(rms,1)+" dBFS   PEAK "+juce::String(peak,1)+" dBFS",bx,y+19,w,20,juce::Justification::centred);
+ };
+ meter(30,"IN",processor.inputPeakDb.load(),processor.inputRmsDb.load());
+ meter(625,"OUT",processor.outputPeakDb.load(),processor.outputRmsDb.load());
 }
 void DrumBusEditor::resized(){
  analyse.setBounds(38,155,145,40);
