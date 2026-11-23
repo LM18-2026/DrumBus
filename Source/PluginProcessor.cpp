@@ -327,8 +327,6 @@ void DrumBusProcessor::timerCallback(){
  }
  lastStrength=*state.getRawParameterValue("strength");
  buildMatch();
- if(clipReady.load(std::memory_order_acquire) && *state.getRawParameterValue("clipListen")>0.5f)
-  if(auto* p=state.getParameter("clipListen"))p->setValueNotifyingHost(0.f);
  // Toggle analyse off through the host-visible parameter; next listen activation
  // should reset the capture explicitly in a later revision.
  if(auto* p=state.getParameter("listen"))p->setValueNotifyingHost(0.f);
