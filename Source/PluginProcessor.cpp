@@ -84,7 +84,7 @@ void DrumBusProcessor::prepareToPlay(double sr,int block){
  rmsInputSum=rmsOutputSum=0.0;rmsSamples=0;rmsTrim=1.f;
  rmsTrimSmooth.reset(sr,0.15);rmsTrimSmooth.setCurrentAndTargetValue(1.f);
  setLatencySamples(0);
- compEnvelope=0.f;compGainDb=0.f;compReductionDb.store(0.f);
+ compEnvelope=0.f;compGainDb=0.f;compGrVuState=0.f;compReductionDb.store(0.f);compGrVuDb.store(0.f);
  compEnableSmooth.reset(sr,0.02);compEnableSmooth.setCurrentAndTargetValue(0.f);
  loadScaledReverb(0.f);
  captured.clear();
@@ -202,6 +202,9 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  const float ratio=ratios[ratioIndex];
  const float attackCoeff=std::exp(-1.f/(float)(rate*attackMs*0.001));
  const float releaseCoeff=std::exp(-1.f/(float)(rate*releaseMs*0.001));
+ // GR meter ballistics: 300 ms attack, 500 ms recovery.
+ const float grVuAttack=std::exp(-1.f/(float)(rate*0.3));
+ const float grVuRelease=std::exp(-1.f/(float)(rate*0.5));
  compEnableSmooth.setTargetValue(compOn?1.f:0.f);
  for(int i=0;i<n;++i){
   const float l=buffer.getSample(0,i),r=buffer.getSample(1,i);
@@ -217,13 +220,17 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
   else if(over>-1.5f){const float x=over+1.5f;targetReduction=x*x*(1.f-1.f/ratio)/6.f;}
   const float gainCoeff=targetReduction>compGainDb?attackCoeff:releaseCoeff;
   compGainDb=gainCoeff*compGainDb+(1.f-gainCoeff)*targetReduction;
+  const float grTarget=compGainDb*compEnableSmooth.getCurrentValue();
+  const float grCoeff=grTarget>compGrVuState?grVuAttack:grVuRelease;
+  compGrVuState=grCoeff*compGrVuState+(1.f-grCoeff)*grTarget;
   const float gain=juce::Decibels::decibelsToGain(-compGainDb)*outputGain;
   const float wetL=drivenL*gain,wetR=drivenR*gain;
   const float mix=compEnableSmooth.getNextValue();
   buffer.setSample(0,i,l+(wetL-l)*mix);
   buffer.setSample(1,i,r+(wetR-r)*mix);
  }
- compReductionDb.store(compGainDb,std::memory_order_relaxed);
+ compReductionDb.store(compOn?compGainDb:0.f,std::memory_order_relaxed);
+ compGrVuDb.store(compGrVuState,std::memory_order_relaxed);
  // Compare the same five-second input window with the complete DSP output.
  if(listening && rmsSamples<captureSize){
   const int count=juce::jmin(n,captureSize-rmsSamples);
