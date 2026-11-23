@@ -64,6 +64,29 @@ private:
  juce::SmoothedValue<float> reverbMix;
  float lastReverbLength=0.f;
  float eqLevelGain=1.f;
+ // Measured RedEQ bass/treble curves: 14 minimum-phase peaking sections each.
+ static constexpr int sweetBands=14;
+ struct SweetBiquad {
+  double b0=1,b1=0,b2=0,a1=0,a2=0,z1=0,z2=0;
+  void setPeak(double sr,double hz,double q,double db) noexcept {
+   const double w=juce::MathConstants<double>::twoPi*juce::jlimit(10.0,sr*0.45,hz)/sr;
+   const double alpha=std::sin(w)/(2.0*q),cs=std::cos(w),A=std::pow(10.0,db/40.0);
+   const double inv=1.0/(1.0+alpha/A);
+   b0=(1.0+alpha*A)*inv;b1=-2.0*cs*inv;b2=(1.0-alpha*A)*inv;
+   a1=-2.0*cs*inv;a2=(1.0-alpha/A)*inv;
+  }
+  float process(float x) noexcept {
+   const double y=b0*x+z1;
+   z1=b1*x-a1*y+z2;z2=b2*x-a2*y;
+   return (float)y;
+  }
+  void reset() noexcept {z1=z2=0.0;}
+ };
+ std::array<std::array<SweetBiquad,sweetBands>,2> sweetBass{},sweetTreble{};
+ std::array<SweetBiquad,2> sweetParam{};
+ juce::SmoothedValue<float> sweetBassSmooth,sweetTrebleSmooth,sweetGainSmooth,sweetSatSmooth;
+ float sweetLastFreq=1000.f,sweetLastQ=1.f;
+
  std::array<float,2> tiltLowState{{0.f,0.f}};
  float tiltLowCoeff=0.f;
  juce::SmoothedValue<float> tiltGainSmooth;
