@@ -1,7 +1,9 @@
 #include "PluginEditor.h"
 DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p),processor(p){
  setSize(1200,620);
- addAndMakeVisible(analyse);addAndMakeVisible(enabled);addAndMakeVisible(phase);addAndMakeVisible(blend);addAndMakeVisible(depth);addAndMakeVisible(reverbWet);addAndMakeVisible(reverbLength);addAndMakeVisible(reverbEnabled);addAndMakeVisible(clipEnabled);addAndMakeVisible(clipListen);addAndMakeVisible(clipReduction);
+ addAndMakeVisible(meterReset);
+ meterReset.onClick=[this]{processor.resetMeters();};
+ addAndMakeVisible(analyse);addAndMakeVisible(enabled);addAndMakeVisible(blend);addAndMakeVisible(depth);addAndMakeVisible(reverbWet);addAndMakeVisible(reverbLength);addAndMakeVisible(reverbEnabled);addAndMakeVisible(clipEnabled);addAndMakeVisible(clipListen);addAndMakeVisible(clipReduction);
  // LinearBar is an editable numeric field with host automation support.
  clipReduction.setSliderStyle(juce::Slider::LinearBar);
  clipReduction.setTextBoxStyle(juce::Slider::TextBoxLeft,false,90,30);
@@ -30,10 +32,8 @@ DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p)
    p->beginChangeGesture();p->setValueNotifyingHost(1.f);p->endChangeGesture();
   }
  };
- phase.addItem("MinPhase",1);phase.addItem("LinPhase",2);
 
  enableAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"enable",enabled);
- phaseAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.state,"phase",phase);
  processor.getEqResponse(responseCurve);
  startTimerHz(10);
 }
@@ -45,7 +45,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("LM18 DrumBus",25,15,480,45,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));
  g.setFont(juce::Font(juce::FontOptions(16.f)));
- g.drawText("V0.20  |  GUI",1030,20,140,30,juce::Justification::centredRight);
+ g.drawText("V0.21  |  GUI",1030,20,140,30,juce::Justification::centredRight);
  auto section=[&](juce::Rectangle<int> r,const juce::String& title){
   g.setColour(panel);g.fillRoundedRectangle(r.toFloat(),12.f);
   g.setColour(line);g.drawRoundedRectangle(r.toFloat().reduced(1.f),12.f,1.5f);
@@ -100,29 +100,29 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("SHELF  ->  CLIP  ->  INV. SHELF",887,235,280,50,juce::Justification::centred);
  g.drawText("CLIP REDUCTION (dB)",887,325,280,35,juce::Justification::centred);
  g.drawText(processor.clipReady.load()?"CLIP READY":("ANALYSIS  "+juce::String(processor.clipAnalysisPercent.load())+" %"),887,410,280,35,juce::Justification::centred);
- // Compact dBFS meters within the existing bottom strip.
- auto meter=[&](int x,const juce::String& name,float peak,float rms){
-  const int y=558,w=440,h=14;
+ // VU ballistics: the bar uses a 300 ms power integrator.
+ // Peak and RMS text are accumulated from RESET until the next reset.
+ auto meter=[&](int x,const juce::String& name,float peak,float rms,float vu){
+  const int y=558,w=405,h=14;
   g.setColour(juce::Colours::white);g.setFont(juce::Font(juce::FontOptions(14.f).withStyle("Bold")));
-  g.drawText(name,x,y-3,50,24,juce::Justification::centredLeft);
-  const int bx=x+55;
+  g.drawText(name,x,y-3,42,24,juce::Justification::centredLeft);
+  const int bx=x+45;
   g.setColour(juce::Colour(0xff243343));g.fillRoundedRectangle((float)bx,(float)y,(float)w,(float)h,3.f);
-  const float peakPos=juce::jlimit(0.f,1.f,(peak+60.f)/60.f);
-  const float rmsPos=juce::jlimit(0.f,1.f,(rms+60.f)/60.f);
-  g.setColour(juce::Colour(0xff3dbadf));g.fillRoundedRectangle((float)bx,(float)y,(float)w*rmsPos,(float)h,3.f);
-  g.setColour(juce::Colours::white);g.drawVerticalLine(bx+(int)(w*peakPos),y-2.f,y+h+2.f);
+  const float level=juce::jlimit(0.f,1.f,(vu+60.f)/60.f);
+  g.setColour(juce::Colour(0xff3dbadf));
+  if(level>0.f)g.fillRoundedRectangle((float)bx,(float)y,(float)w*level,(float)h,3.f);
   g.setColour(juce::Colour(0xffa8b8ca));g.setFont(juce::Font(juce::FontOptions(12.f)));
-  g.drawText("RMS "+juce::String(rms,1)+" dBFS   PEAK "+juce::String(peak,1)+" dBFS",bx,y+19,w,20,juce::Justification::centred);
+  g.drawText("RMS AVG "+juce::String(rms,1)+" dBFS   PEAK MAX "+juce::String(peak,1)+" dBFS",bx,y+19,w,20,juce::Justification::centred);
  };
- meter(30,"IN",processor.inputPeakDb.load(),processor.inputRmsDb.load());
- meter(625,"OUT",processor.outputPeakDb.load(),processor.outputRmsDb.load());
+ meter(24,"IN",processor.inputPeakDb.load(),processor.inputRmsDb.load(),processor.inputVuDb.load());
+ meter(540,"OUT",processor.outputPeakDb.load(),processor.outputRmsDb.load(),processor.outputVuDb.load());
 }
 void DrumBusEditor::resized(){
+ meterReset.setBounds(1075,556,95,30);
  analyse.setBounds(38,155,145,40);
  blend.setBounds(155,492,390,35);
  depth.setBounds(170,203,375,35);
  enabled.setBounds(440,455,125,30);
- phase.setBounds(335,155,225,40);
  reverbWet.setBounds(612,210,116,125);
  reverbLength.setBounds(734,210,116,125);
  reverbEnabled.setBounds(668,455,125,30);
