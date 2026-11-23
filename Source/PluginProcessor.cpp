@@ -28,6 +28,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumBusProcessor::params(){
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"compAttack",1},"FET Attack ms",juce::NormalisableRange<float>(0.02f,0.8f,0.01f),0.3f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"compRelease",1},"FET Release ms",juce::NormalisableRange<float>(50.f,1100.f,1.f),200.f));
  p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"compRatio",1},"FET Ratio",juce::StringArray{"4:1","8:1","12:1","20:1"},0));
+ p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"sweetEnable",1},"Sweetening EQ Enabled",false));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetBass",1},"RedEQ Bass Percent",juce::NormalisableRange<float>(-100.f,100.f,0.1f),0.f));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetTreble",1},"RedEQ Treble Percent",juce::NormalisableRange<float>(-100.f,100.f,0.1f),0.f));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetFreq",1},"Sweet Param Hz",juce::NormalisableRange<float>(20.f,20000.f,0.1f,0.25f),1000.f));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetGain",1},"Sweet Param dB",juce::NormalisableRange<float>(-24.f,24.f,0.1f),0.f));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetQ",1},"Sweet Param Q",juce::NormalisableRange<float>(0.1f,20.f,0.01f,0.35f),1.f));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetSat",1},"Sweet Param SAT",juce::NormalisableRange<float>(0.f,100.f,0.1f),0.f));
  return {p.begin(),p.end()};
 }
 int DrumBusProcessor::bandForFrequency(double hz) const {
@@ -87,6 +94,13 @@ void DrumBusProcessor::prepareToPlay(double sr,int block){
  rmsInputSum=rmsOutputSum=0.0;rmsSamples=0;rmsTrim=1.f;
  rmsTrimSmooth.reset(sr,0.15);rmsTrimSmooth.setCurrentAndTargetValue(1.f);
  setLatencySamples(0);
+ sweetBassSmooth.reset(sr,0.04);sweetTrebleSmooth.reset(sr,0.04);
+ sweetGainSmooth.reset(sr,0.04);sweetSatSmooth.reset(sr,0.04);
+ sweetBassSmooth.setCurrentAndTargetValue(0.f);sweetTrebleSmooth.setCurrentAndTargetValue(0.f);
+ sweetGainSmooth.setCurrentAndTargetValue(0.f);sweetSatSmooth.setCurrentAndTargetValue(0.f);
+ for(auto& ch:sweetBass)for(auto& f:ch)f.reset();
+ for(auto& ch:sweetTreble)for(auto& f:ch)f.reset();
+ for(auto& f:sweetParam)f.reset();
  tiltLowState.fill(0.f);
  tiltGainSmooth.reset(sr,0.025);tiltGainSmooth.setCurrentAndTargetValue(0.f);
  tiltLowCoeff=(float)std::exp(-juce::MathConstants<double>::twoPi*1000.0/sr);
@@ -279,6 +293,49 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  for(int i=0;i<n;++i){
   const float gain=rmsTrimSmooth.getNextValue();
   for(int c=0;c<2;++c)buffer.setSample(c,i,buffer.getSample(c,i)*gain);
+ }
+ // Sweetening EQ: minimum-phase IIR approximation of measured RedEQ
+ // maximum-boost impulse responses (44.1 kHz reference).
+ // Gain values are logarithmically scaled, negative controls invert dB curves.
+ // Each biquad retains state; coefficients are updated without allocations.
+ static constexpr double centers[sweetBands]={
+  30.,48.9,79.6,129.6,211.,343.6,559.6,911.3,
+  1484.1,2417.,3936.1,6410.,10438.9,17000.};
+ static constexpr double bassCurve[sweetBands]={
+  15.390,3.432,6.616,3.129,3.160,1.151,0.462,-0.377,
+  -0.459,-0.489,-0.679,-0.738,-1.822,-6.612};
+ static constexpr double trebleCurve[sweetBands]={
+  -0.017,0.145,0.058,0.085,0.043,-0.094,-0.239,-0.263,
+  -0.109,0.317,1.340,3.518,7.565,6.789};
+ const bool sweetOn=state.getRawParameterValue("sweetEnable")->load()>0.5f;
+ sweetBassSmooth.setTargetValue(sweetOn?state.getRawParameterValue("sweetBass")->load()/100.f:0.f);
+ sweetTrebleSmooth.setTargetValue(sweetOn?state.getRawParameterValue("sweetTreble")->load()/100.f:0.f);
+ sweetGainSmooth.setTargetValue(sweetOn?state.getRawParameterValue("sweetGain")->load():0.f);
+ sweetSatSmooth.setTargetValue(sweetOn?state.getRawParameterValue("sweetSat")->load()/100.f:0.f);
+ const float paramFreq=state.getRawParameterValue("sweetFreq")->load();
+ const float paramQ=state.getRawParameterValue("sweetQ")->load();
+ for(int i=0;i<n;++i){
+  const float bass=sweetBassSmooth.getNextValue(),treble=sweetTrebleSmooth.getNextValue();
+  const float gain=sweetGainSmooth.getNextValue(),sat=sweetSatSmooth.getNextValue();
+  // 32-sample coefficient ramp; filter states never reset during automation.
+  if((i&31)==0){
+   for(int c=0;c<2;++c){
+    for(int b=0;b<sweetBands;++b){
+     sweetBass[(size_t)c][(size_t)b].setPeak(rate,centers[b],0.8,bassCurve[b]*bass);
+     sweetTreble[(size_t)c][(size_t)b].setPeak(rate,centers[b],0.8,trebleCurve[b]*treble);
+    }
+    sweetParam[(size_t)c].setPeak(rate,paramFreq,paramQ,gain);
+   }
+  }
+  for(int c=0;c<2;++c){
+   float x=buffer.getSample(c,i);
+   for(auto& f:sweetBass[(size_t)c])x=f.process(x);
+   for(auto& f:sweetTreble[(size_t)c])x=f.process(x);
+   x=sweetParam[(size_t)c].process(x);
+   // Soft saturation; 0% SAT is bit-identical to the unsaturated signal.
+   if(sat>0.f){const float driven=std::tanh(2.5f*x)/std::tanh(2.5f);x+=sat*(driven-x);}
+   buffer.setSample(c,i,x);
+  }
  }
  // VU-style RMS bar: 300 ms power-domain integration.
  // Numeric RMS: cumulative energy average since RESET.
