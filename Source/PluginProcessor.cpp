@@ -13,7 +13,6 @@ DrumBusProcessor::DrumBusProcessor()
 juce::AudioProcessorValueTreeState::ParameterLayout DrumBusProcessor::params(){
  std::vector<std::unique_ptr<juce::RangedAudioParameter>> p;
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"listen",1},"Analyse",false));
- p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"phase",1},"Phase",juce::StringArray{"MinPhase","LinPhase"},0));
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"enable",1},"Match EQ",true));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"blend",1},"EQ Blend",juce::NormalisableRange<float>(0.f,100.f,1.f),100.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"strength",1},"Match Depth",juce::NormalisableRange<float>(0.f,100.f,1.f),35.f));
@@ -83,14 +82,7 @@ void DrumBusProcessor::prepareToPlay(double sr,int block){
  eqLevelGain=1.f;
  rmsInputSum=rmsOutputSum=0.0;rmsSamples=0;rmsTrim=1.f;
  rmsTrimSmooth.reset(sr,0.15);rmsTrimSmooth.setCurrentAndTargetValue(1.f);
- phaseGainSmooth.reset(sr,0.15);phaseGainSmooth.setCurrentAndTargetValue(1.f);
- previousPhase=(int)state.getRawParameterValue("phase")->load();phaseMeasureSamples=0;phaseInputPower=phaseOutputPower=0.0;phaseCompensation=1.f;
- firPosition=0;dryPosition=0;
- for(auto& c:firHistory)c.fill(0.f);
- for(auto& c:dryDelay)c.fill(0.f);
- for(auto& c:iirDelay)c.fill(0.f);
- firKernel.fill(0.f);firKernel[firDelay]=1.f;
- setLatencySamples(firDelay);
+ setLatencySamples(0);
  clipSamples=0;clipObservedPeak=0.f;clipOriginalPeak=0.f;clipWasListening=false;
  clipCaptureComplete.store(false);clipMakeup.store(1.f);clipCalibratedReduction=-1.f;
  clipReady.store(false);clipAnalysisPercent.store(0);
@@ -121,13 +113,10 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  const int n=buffer.getNumSamples();
  if(buffer.getNumChannels()<2)return;
  const bool listening=*state.getRawParameterValue("listen")>0.5f;
- const int currentPhase=(int)state.getRawParameterValue("phase")->load();
- if(currentPhase!=previousPhase){previousPhase=currentPhase;phaseMeasureSamples=0;phaseInputPower=phaseOutputPower=0.0;phaseCompensation=1.f;phaseGainSmooth.setTargetValue(1.f);}
  double inputPowerBlock=0.0,inputPeakBlock=0.0;
  for(int c=0;c<2;++c){const auto* d=buffer.getReadPointer(c);for(int i=0;i<n;++i){inputPowerBlock+=(double)d[i]*d[i];inputPeakBlock=juce::jmax(inputPeakBlock,(double)std::abs(d[i]));}}
  const double inputRmsBlock=std::sqrt(inputPowerBlock/juce::jmax(1,2*n));
- inputPeakDb.store(juce::Decibels::gainToDecibels((float)inputPeakBlock,-100.f));
- inputRmsDb.store(juce::Decibels::gainToDecibels((float)inputRmsBlock,-100.f));
+ // Meter values are updated after the complete block; input is captured here.
  if(listening && !wasListening){
   // A new session always discards the previous EQ before recording.
   matched.store(false,std::memory_order_release);
@@ -157,41 +146,19 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  }
  const float blend=juce::jlimit(0.f,1.f,*state.getRawParameterValue("blend")/100.f);
  const bool eqActive=blend>0.f && *state.getRawParameterValue("enable")>0.5f && matched.load(std::memory_order_acquire);
- const bool linear=state.getRawParameterValue("phase")->load()>0.5f;
- // Fixed latency in both modes; phase-aligned dry and wet paths.
- if(n<=processed.getNumSamples()){
+ // Minimum-phase IIR only; no FIR, no added latency.
+ if(n<=processed.getNumSamples() && eqActive){
   juce::SpinLock::ScopedTryLockType lock(eqLock);
-  for(int i=0;i<n;++i){
+  if(lock.isLocked()){
    for(int c=0;c<2;++c){
-    const float in=buffer.getSample(c,i);
-    firHistory[(size_t)c][(size_t)firPosition]=in;
-    dryDelay[(size_t)c][(size_t)dryPosition]=in;
-    const int read=(dryPosition+1)%(firDelay+1);
-    const float dry=dryDelay[(size_t)c][(size_t)read];
-    float wet=dry;
-    if(eqActive && lock.isLocked()){
-     if(linear){
-      double v=0.0;
-      int idx=firPosition;
-      for(int k=0;k<firLength;++k){
-       v+=(double)firKernel[(size_t)k]*firHistory[(size_t)c][(size_t)idx];
-       if(--idx<0)idx=firLength-1;
-      }
-      wet=(float)v;
-     }else{
-      // Minimum-phase IIR result is delayed to align with the dry path.
-      float v=in;
-      for(auto& f:eq[(size_t)c])v=f.processSample(v);
-      // Reuse a separate circular delay for IIR wet path.
-      iirDelay[(size_t)c][(size_t)dryPosition]=v;
-      wet=iirDelay[(size_t)c][(size_t)read];
-     }
+    auto* data=buffer.getWritePointer(c);
+    for(int i=0;i<n;++i){
+     const float dry=data[i];
+     float wet=dry;
+     for(auto& filter:eq[(size_t)c])wet=filter.processSample(wet);
+     data[i]=dry*(1.f-blend)+wet*blend;
     }
-    processed.setSample(c,i,wet);
-    buffer.setSample(c,i,eqActive&&lock.isLocked() ? (1.f-blend)*dry+blend*wet : dry);
    }
-   firPosition=(firPosition+1)%firLength;
-   dryPosition=(dryPosition+1)%(firDelay+1);
   }
  }
  // Feed convolution every block to preserve tails and continuity.
@@ -262,18 +229,6 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
    buffer.setSample(1,i,postR*makeup);
   }
  }
- // Phase-mode switch: estimate output/input power over one second.
- // This compensates mode-dependent level shifts without modifying the clipper calibration.
- if(phaseMeasureSamples<(int)rate){
-  const int count=juce::jmin(n,(int)rate-phaseMeasureSamples);
-  for(int c=0;c<2;++c){const auto* d=buffer.getReadPointer(c);for(int i=0;i<count;++i)phaseOutputPower+=(double)d[i]*d[i];}
-  phaseInputPower+=inputPowerBlock*((double)count/juce::jmax(1,n));
-  phaseMeasureSamples+=count;
-  if(phaseMeasureSamples>=(int)rate && phaseInputPower>1.e-10 && phaseOutputPower>1.e-10){
-   phaseCompensation=juce::jlimit(0.25f,4.f,(float)std::sqrt(phaseInputPower/phaseOutputPower));
-   phaseGainSmooth.setTargetValue(phaseCompensation);
-  }
- }
  // Compare the same five-second input window with the complete DSP output.
  if(listening && rmsSamples<captureSize){
   const int count=juce::jmin(n,captureSize-rmsSamples);
@@ -285,13 +240,43 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
   }
  }
  for(int i=0;i<n;++i){
-  const float gain=rmsTrimSmooth.getNextValue()*phaseGainSmooth.getNextValue();
+  const float gain=rmsTrimSmooth.getNextValue();
   for(int c=0;c<2;++c)buffer.setSample(c,i,buffer.getSample(c,i)*gain);
  }
+ // VU-style RMS bar: 300 ms power-domain integration.
+ // Numeric RMS: cumulative energy average since RESET.
+ // Numeric PEAK: maximum absolute sample since RESET.
+ const auto reset=metersResetGeneration.load(std::memory_order_acquire);
+ if(reset!=metersAppliedGeneration){
+  metersAppliedGeneration=reset;
+  meterInputPower=0.0;meterOutputPower=0.0;
+  meterInputEnergy=0.0;meterOutputEnergy=0.0;meterFrames=0;
+  meterInputMax=0.f;meterOutputMax=0.f;
+ }
  double outputPowerBlock=0.0,outputPeakBlock=0.0;
- for(int c=0;c<2;++c){const auto* d=buffer.getReadPointer(c);for(int i=0;i<n;++i){outputPowerBlock+=(double)d[i]*d[i];outputPeakBlock=juce::jmax(outputPeakBlock,(double)std::abs(d[i]));}}
- outputPeakDb.store(juce::Decibels::gainToDecibels((float)outputPeakBlock,-100.f));
- outputRmsDb.store(juce::Decibels::gainToDecibels((float)std::sqrt(outputPowerBlock/juce::jmax(1,2*n)),-100.f));
+ for(int c=0;c<2;++c){
+  const auto* d=buffer.getReadPointer(c);
+  for(int i=0;i<n;++i){
+   outputPowerBlock+=(double)d[i]*d[i];
+   outputPeakBlock=juce::jmax(outputPeakBlock,(double)std::abs(d[i]));
+  }
+ }
+ const double alpha=std::exp(-(double)n/(rate*0.3));
+ const double inPower=inputPowerBlock/juce::jmax(1,2*n);
+ const double outPower=outputPowerBlock/juce::jmax(1,2*n);
+ meterInputPower=alpha*meterInputPower+(1.0-alpha)*inPower;
+ meterOutputPower=alpha*meterOutputPower+(1.0-alpha)*outPower;
+ inputVuDb.store(juce::Decibels::gainToDecibels((float)std::sqrt(meterInputPower),-100.f));
+ outputVuDb.store(juce::Decibels::gainToDecibels((float)std::sqrt(meterOutputPower),-100.f));
+ meterInputEnergy+=inputPowerBlock;meterOutputEnergy+=outputPowerBlock;
+ meterFrames+=(juce::uint64)n;
+ meterInputMax=juce::jmax(meterInputMax,(float)inputPeakBlock);
+ meterOutputMax=juce::jmax(meterOutputMax,(float)outputPeakBlock);
+ const double denom=juce::jmax(1.0,2.0*(double)meterFrames);
+ inputPeakDb.store(juce::Decibels::gainToDecibels(meterInputMax,-100.f));
+ outputPeakDb.store(juce::Decibels::gainToDecibels(meterOutputMax,-100.f));
+ inputRmsDb.store(juce::Decibels::gainToDecibels((float)std::sqrt(meterInputEnergy/denom),-100.f));
+ outputRmsDb.store(juce::Decibels::gainToDecibels((float)std::sqrt(meterOutputEnergy/denom),-100.f));
 }
 void DrumBusProcessor::loadScaledReverb(float amount){
  const double factor=amount<0.f?1.0+0.006*(double)amount:1.0+0.01*(double)amount;
@@ -439,34 +424,7 @@ void DrumBusProcessor::buildMatch(){
  }
  for(auto& channel:eq)for(auto& filter:channel)filter.reset();
  eqOutputGain=newOutputGain;
- buildLinearKernel();
  matched.store(true,std::memory_order_release);
-}
-
-void DrumBusProcessor::buildLinearKernel(){
- // Frequency sampling of the complete IIR magnitude, zero-phase, Hann-windowed.
- constexpr int fftN=4096;
- std::array<double,fftN/2+1> mag{};
- for(int k=0;k<=fftN/2;++k){
-  const double hz=(double)k*rate/fftN;
-  double m=1.0;
-  for(const auto& f:eq[0])m*=f.coefficients->getMagnitudeForFrequency(juce::jmin(hz,rate*0.499999),rate);
-  mag[(size_t)k]=juce::jlimit(0.001,100.0,m);
- }
- double sum=0.0;
- for(int t=0;t<firLength;++t){
-  const int lag=t-firDelay;
-  double v=mag[0]+mag[fftN/2]*((lag&1)?-1.0:1.0);
-  for(int k=1;k<fftN/2;++k)v+=2.0*mag[(size_t)k]*std::cos(juce::MathConstants<double>::twoPi*k*lag/fftN);
-  const double w=0.5-0.5*std::cos(juce::MathConstants<double>::twoPi*t/(firLength-1));
-  firKernel[(size_t)t]=(float)(v*w/fftN);
-  sum+=firKernel[(size_t)t];
- }
- // Preserve calculated DC magnitude after windowing.
- if(std::abs(sum)>1.e-9){
-  const float correction=(float)(mag[0]/sum);
-  for(auto& tap:firKernel)tap*=correction;
- }
 }
 
 bool DrumBusProcessor::getEqResponse(EqResponse& response){
