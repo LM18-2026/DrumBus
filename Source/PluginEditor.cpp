@@ -1,6 +1,23 @@
 #include "PluginEditor.h"
 DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p),processor(p){
- setSize(1200,620);
+ setSize(1200,840);
+ addAndMakeVisible(sweetEnabled);
+ sweetEnableAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"sweetEnable",sweetEnabled);
+ auto addSweet=[&](juce::Slider& slider,const char* id,int digits){
+  addAndMakeVisible(slider);
+  slider.setSliderStyle(juce::Slider::LinearHorizontal);
+  slider.setTextBoxStyle(juce::Slider::TextBoxRight,false,70,23);
+  slider.setNumDecimalPlacesToDisplay(digits);
+ };
+ addSweet(sweetBass,"sweetBass",1);addSweet(sweetTreble,"sweetTreble",1);
+ addSweet(sweetFreq,"sweetFreq",1);addSweet(sweetGain,"sweetGain",1);
+ addSweet(sweetQ,"sweetQ",2);addSweet(sweetSat,"sweetSat",1);
+ sweetBassAttachment=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,"sweetBass",sweetBass);
+ sweetTrebleAttachment=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,"sweetTreble",sweetTreble);
+ sweetFreqAttachment=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,"sweetFreq",sweetFreq);
+ sweetGainAttachment=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,"sweetGain",sweetGain);
+ sweetQAttachment=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,"sweetQ",sweetQ);
+ sweetSatAttachment=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,"sweetSat",sweetSat);
  addAndMakeVisible(meterReset);
  meterReset.onClick=[this]{processor.resetMeters();};
  addAndMakeVisible(analyse);addAndMakeVisible(enabled);addAndMakeVisible(blend);addAndMakeVisible(depth);addAndMakeVisible(tiltAmount);addAndMakeVisible(tiltEnabled);addAndMakeVisible(reverbWet);addAndMakeVisible(reverbLength);addAndMakeVisible(reverbEnabled);addAndMakeVisible(compEnabled);addAndMakeVisible(compInput);addAndMakeVisible(compOutput);addAndMakeVisible(compAttack);addAndMakeVisible(compRelease);addAndMakeVisible(compRatio);addAndMakeVisible(compMode);
@@ -58,7 +75,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.drawText("LM18 DrumBus",25,15,480,45,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));
  g.setFont(juce::Font(juce::FontOptions(16.f)));
- g.drawText("V0.29  |  GUI",1030,20,140,30,juce::Justification::centredRight);
+ g.drawText("V0.30  |  GUI",1030,20,140,30,juce::Justification::centredRight);
  auto section=[&](juce::Rectangle<int> r,const juce::String& title){
   g.setColour(panel);g.fillRoundedRectangle(r.toFloat(),12.f);
   g.setColour(line);g.drawRoundedRectangle(r.toFloat().reduced(1.f),12.f,1.5f);
@@ -68,6 +85,15 @@ void DrumBusEditor::paint(juce::Graphics& g){
  section({18,80,570,455},"MATCH EQ");
  section({600,80,260,455},"REVERB / AMBIENCE");
  section({872,80,310,455},"FET COMPRESSOR");
+ section({18,620,1164,160},"SWEETENING EQ");
+ g.setColour(juce::Colour(0xffa8b8ca));
+ g.setFont(juce::Font(juce::FontOptions(13.f)));
+ g.drawText("RedEQ BASS",38,673,112,23,juce::Justification::centredLeft);
+ g.drawText("RedEQ TREBLE",615,673,115,23,juce::Justification::centredLeft);
+ g.drawText("Hz",38,731,30,20,juce::Justification::centredLeft);
+ g.drawText("dB",260,731,30,20,juce::Justification::centredLeft);
+ g.drawText("Q",496,731,20,20,juce::Justification::centredLeft);
+ g.drawText("SAT",727,731,35,20,juce::Justification::centredLeft);
  const juce::Rectangle<float> graph(48.f,296.f,510.f,129.f);
  g.setColour(juce::Colour(0xff0b131d));g.fillRect(graph);
  g.setColour(juce::Colour(0xff33485a));
@@ -136,7 +162,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  // VU ballistics: the bar uses a 300 ms power integrator.
  // Peak and RMS text are accumulated from RESET until the next reset.
  auto meter=[&](int x,const juce::String& name,float peak,float rms,float vu){
-  const int y=558,w=405,h=14;
+  const int y=800,w=405,h=14;
   g.setColour(juce::Colours::white);g.setFont(juce::Font(juce::FontOptions(14.f).withStyle("Bold")));
   g.drawText(name,x,y-3,42,24,juce::Justification::centredLeft);
   const int bx=x+45;
@@ -151,7 +177,14 @@ void DrumBusEditor::paint(juce::Graphics& g){
  meter(540,"OUT",processor.outputPeakDb.load(),processor.outputRmsDb.load(),processor.outputVuDb.load());
 }
 void DrumBusEditor::resized(){
- meterReset.setBounds(1075,556,95,30);
+ meterReset.setBounds(1075,798,95,30);
+ sweetEnabled.setBounds(952,636,195,30);
+ sweetBass.setBounds(155,668,410,34);
+ sweetTreble.setBounds(735,668,410,34);
+ sweetFreq.setBounds(65,723,190,34);
+ sweetGain.setBounds(290,723,195,34);
+ sweetQ.setBounds(516,723,195,34);
+ sweetSat.setBounds(765,723,380,34);
  analyse.setBounds(38,155,145,40);
  blend.setBounds(155,492,390,35);
  depth.setBounds(170,203,375,35);
