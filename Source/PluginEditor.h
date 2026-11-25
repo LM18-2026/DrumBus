@@ -17,6 +17,10 @@ private:
  float grNumericDisplayed=0.f;
  juce::TextButton analyse{"EQ LISTEN (5 s)"};
  juce::ToggleButton enabled{"MATCH EQ"},tiltEnabled{"TILT EQ"};
+ juce::Slider matchOutput,globalOutput;
+ juce::ToggleButton globalBypass{"BYPASS"};
+ std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> matchOutputAttachment,globalOutputAttachment;
+ std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> globalBypassAttachment;
  juce::Slider blend,depth,tiltAmount,reverbWet,reverbLength;
  juce::ToggleButton reverbEnabled{"REVERB ON"},compEnabled{"COMPRESSOR ON"};
  juce::Slider compInput,compOutput,compAttack,compRelease;
