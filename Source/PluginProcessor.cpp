@@ -40,6 +40,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumBusProcessor::params(){
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"globalOutput",1},"Global Output dB",juce::NormalisableRange<float>(-24.f,24.f,0.1f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"globalBypass",1},"Global Bypass",false));
  p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"moduleOrder",1},"Module Order",juce::StringArray{"Ambience > 1176","1176 > Ambience"},0));
+ p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"deessDual",1},"Deesser Dual Mono",false));
+ for(int b=0;b<2;++b){
+  const auto prefix=juce::String("ds")+juce::String(b);
+  auto f=[&](const char* id,float lo,float hi,float step,float def){p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{prefix+id,1},prefix+id,juce::NormalisableRange<float>(lo,hi,step),def));};
+  f("Freq",b?6000.f:2000.f,b?16000.f:7000.f,1.f,b?9000.f:4000.f);
+  f("Q",0.5f,5.f,0.01f,1.f);f("Sens",-40.f,20.f,0.1f,-10.f);f("Range",0.f,12.f,0.1f,6.f);f("Attack",0.1f,20.f,0.1f,2.f);f("Release",10.f,300.f,1.f,80.f);
+  for(auto id:{"On","Listen","Delta"})p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{prefix+id,1},prefix+id,false));
+ }
  return {p.begin(),p.end()};
 }
 int DrumBusProcessor::bandForFrequency(double hz) const {
@@ -87,6 +95,7 @@ void DrumBusProcessor::analyseReference(){
 }
 void DrumBusProcessor::prepareToPlay(double sr,int block){
  rate=sr;
+ deess={};
  bypassDry.setSize(2,juce::jmax(1,block));
  for(auto* v:{&matchOutputSmooth,&globalOutputSmooth,&bypassSmooth})v->reset(sr,0.02);
  matchOutputSmooth.setCurrentAndTargetValue(1.f);globalOutputSmooth.setCurrentAndTargetValue(1.f);bypassSmooth.setCurrentAndTargetValue(0.f);
@@ -239,6 +248,7 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  }
  matchOutputSmooth.setTargetValue(juce::Decibels::decibelsToGain(state.getRawParameterValue("matchOutput")->load()));
  for(int i=0;i<n;++i){const float g=matchOutputSmooth.getNextValue();for(int c=0;c<2;++c)buffer.setSample(c,i,buffer.getSample(c,i)*g);}
+ processDeess(buffer,n);
  auto runAmbience=[&](){
  // Feed convolution every block to preserve tails and continuity.
  if(n<=reverbBuffer.getNumSamples()){
@@ -610,3 +620,21 @@ void DrumBusProcessor::setStateInformation(const void* d,int n){
 }
 juce::AudioProcessorEditor* DrumBusProcessor::createEditor(){return new DrumBusEditor(*this);}
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter(){return new DrumBusProcessor();}
+
+void DrumBusProcessor::processDeess(juce::AudioBuffer<float>& buffer,int n){
+ const bool dual=state.getRawParameterValue("deessDual")->load()>0.5f;
+ for(int b=0;b<2;++b){
+ const auto prefix=juce::String("ds")+juce::String(b);
+ auto p=[&](const char* id){return state.getRawParameterValue(prefix+id)->load();};
+ const double g=std::tan(juce::MathConstants<double>::pi*juce::jmin((double)p("Freq"),rate*0.45)/rate),k=1.0/p("Q"),a=1.0/(1.0+g*(g+k));
+ const double attack=std::exp(-1000.0/(rate*p("Attack"))),release=std::exp(-1000.0/(rate*p("Release"))),smooth=std::exp(-1.0/(rate*0.003));
+ const double sens=p("Sens"),range=p("Range");const bool on=p("On")>0.5f,listen=p("Listen")>0.5f,delta=p("Delta")>0.5f;
+ for(int i=0;i<n;++i){
+ double x[2],bp[2],target[2];
+ for(int c=0;c<2;++c){auto& d=deess[b][c];x[c]=buffer.getSample(c,i);const double v=a*(d.band+g*(x[c]-d.low)),l=d.low+g*v;d.band=2*v-d.band;d.low=2*l-d.low;bp[c]=k*v;const double rest=x[c]-bp[c];d.power=smooth*d.power+(1-smooth)*bp[c]*bp[c];d.rest=smooth*d.rest+(1-smooth)*rest*rest;target[c]=on&&d.power>1e-8?juce::jlimit(0.0,range,10*std::log10((d.power+1e-15)/(d.rest+1e-15))-sens):0.0;}
+ if(!dual){target[0]=target[1]=juce::jmax(target[0],target[1]);deess[b][0].gain=deess[b][1].gain=juce::jmax(deess[b][0].gain,deess[b][1].gain);}
+ for(int c=0;c<2;++c){auto& d=deess[b][c];const double coeff=target[c]>d.gain?attack:release;d.gain=coeff*d.gain+(1-coeff)*target[c];const double removed=bp[c]*(1-std::pow(10.0,-d.gain/20));buffer.setSample(c,i,(float)(listen?bp[c]:delta?removed:x[c]-removed));}
+ }
+ for(int c=0;c<2;++c)deessGR[b][c].store((float)deess[b][c].gain);
+ }
+}
