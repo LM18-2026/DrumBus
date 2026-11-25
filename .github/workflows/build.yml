@@ -17,9 +17,9 @@ jobs:
         run: |
           $plugin = Get-ChildItem build -Recurse -Directory -Filter 'LM18 DRUMS.vst3' | Select-Object -First 1
           if (-not $plugin) { throw 'LM18 DRUMS.vst3 not found' }
-          Compress-Archive -Path $plugin.FullName -DestinationPath DRUMS-V0.33-Windows.zip
+          Compress-Archive -Path $plugin.FullName -DestinationPath DRUMS-V0.34-Windows.zip
       - uses: actions/upload-artifact@v5
         with:
-          name: DRUMS-V0.33-Windows
-          path: DRUMS-V0.33-Windows.zip
+          name: DRUMS-V0.34-Windows
+          path: DRUMS-V0.34-Windows.zip
           if-no-files-found: error
