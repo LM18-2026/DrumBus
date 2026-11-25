@@ -61,7 +61,8 @@ private:
  bool eqFadeFromDry=false;
  juce::AudioBuffer<float> captured,processed,reverbBuffer;
  juce::dsp::Convolution reverb;
- juce::SmoothedValue<float> reverbMix;
+ juce::SmoothedValue<float> reverbMix,matchOutputSmooth,globalOutputSmooth,bypassSmooth;
+ juce::AudioBuffer<float> bypassDry;
  float lastReverbLength=0.f;
  float eqLevelGain=1.f;
  // Measured RedEQ bass/treble curves: 14 minimum-phase peaking sections each.
