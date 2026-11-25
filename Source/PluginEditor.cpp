@@ -12,6 +12,9 @@ DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p)
  matchOutputAttachment=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,"matchOutput",matchOutput);
  globalOutputAttachment=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,"globalOutput",globalOutput);
  globalBypassAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"globalBypass",globalBypass);
+ addAndMakeVisible(moduleOrder);
+ moduleOrder.addItem("AMBIENCE > 1176",1);moduleOrder.addItem("1176 > AMBIENCE",2);
+ moduleOrderAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.state,"moduleOrder",moduleOrder);
  addAndMakeVisible(referenceType);
  referenceType.addItem("KIT",1);referenceType.addItem("KICK",2);referenceType.addItem("SNARE",3);
  referenceAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.state,"referenceType",referenceType);
@@ -205,6 +208,7 @@ void DrumBusEditor::resized(){
  sweetGain.setBounds(290,723,195,34);
  sweetQ.setBounds(516,723,195,34);
  sweetSat.setBounds(765,723,380,34);
+ moduleOrder.setBounds(665,550,450,35);
  globalOutput.setBounds(565,20,230,30);
  globalBypass.setBounds(820,20,120,30);
  matchOutput.setBounds(355,155,205,40);
