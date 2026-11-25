@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p),processor(p){
+ setLookAndFeel(&switchLook);
  setSize(1200,840);
  for(auto* slider:{&matchOutput,&globalOutput}){
   addAndMakeVisible(*slider);
@@ -13,8 +14,7 @@ DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p)
  globalOutputAttachment=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,"globalOutput",globalOutput);
  globalBypassAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"globalBypass",globalBypass);
  addAndMakeVisible(moduleOrder);
- moduleOrder.addItem("AMBIENCE > 1176",1);moduleOrder.addItem("1176 > AMBIENCE",2);
- moduleOrderAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.state,"moduleOrder",moduleOrder);
+ moduleOrder.onClick=[this]{if(auto* p=processor.state.getParameter("moduleOrder")){p->beginChangeGesture();p->setValueNotifyingHost(p->getValue()>0.5f?0.f:1.f);p->endChangeGesture();}};
  addAndMakeVisible(referenceType);
  referenceType.addItem("KIT",1);referenceType.addItem("KICK",2);referenceType.addItem("SNARE",3);
  referenceAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.state,"referenceType",referenceType);
@@ -27,7 +27,7 @@ DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p)
   slider.setNumDecimalPlacesToDisplay(digits);
  };
  addSweet(sweetBass,"sweetBass",1);addSweet(sweetTreble,"sweetTreble",1);
- addSweet(sweetFreq,"sweetFreq",1);addSweet(sweetGain,"sweetGain",1);
+ addSweet(sweetFreq,"sweetFreq",0);addSweet(sweetGain,"sweetGain",1);
  addSweet(sweetQ,"sweetQ",2);addSweet(sweetSat,"sweetSat",1);
  sweetBassAttachment=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,"sweetBass",sweetBass);
  sweetTrebleAttachment=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,"sweetTreble",sweetTreble);
@@ -82,6 +82,8 @@ DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p)
 
  enableAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"enable",enabled);
  processor.getEqResponse(responseCurve);
+ const auto initReset=[&](NumericSlider& slider,const char* id){if(auto* p=processor.state.getParameter(id))slider.resetValue=p->convertFrom0to1(p->getDefaultValue());slider.addMouseListener(&slider,true);};
+ initReset(matchOutput,"matchOutput");initReset(globalOutput,"globalOutput");initReset(blend,"blend");initReset(depth,"strength");initReset(tiltAmount,"tiltDb");initReset(reverbWet,"reverbMix");initReset(reverbLength,"reverbLength");initReset(compInput,"compInput");initReset(compOutput,"compOutput");initReset(compAttack,"compAttack");initReset(compRelease,"compRelease");initReset(sweetBass,"sweetBass");initReset(sweetTreble,"sweetTreble");initReset(sweetFreq,"sweetFreq");initReset(sweetGain,"sweetGain");initReset(sweetQ,"sweetQ");initReset(sweetSat,"sweetSat");
  startTimerHz(10);
 }
 void DrumBusEditor::paint(juce::Graphics& g){
@@ -94,7 +96,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.setColour(juce::Colour(0xffa8b8ca));
  g.setFont(juce::Font(juce::FontOptions(16.f)));
  g.drawText("OUTPUT",490,20,75,30,juce::Justification::centredLeft);
- g.drawText("V0.32  |  GUI",1030,20,140,30,juce::Justification::centredRight);
+ g.drawText("V0.33  |  GUI",1030,20,140,30,juce::Justification::centredRight);
  auto section=[&](juce::Rectangle<int> r,const juce::String& title){
   g.setColour(panel);g.fillRoundedRectangle(r.toFloat(),12.f);
   g.setColour(line);g.drawRoundedRectangle(r.toFloat().reduced(1.f),12.f,1.5f);
