@@ -27,8 +27,14 @@ private:
    g.drawFittedText(b.getButtonText(),b.getLocalBounds().reduced(4),juce::Justification::centred,1);
   }
  } switchLook;
+ std::array<juce::Rectangle<int>,6> panels{};
+ bool lastEnd=false,lastReverse=false;
+ juce::ToggleButton powerEnabled{"ON"};
+ std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> powerAttachment;
  void timerCallback() override {
-  dsEnd.setButtonText(processor.state.getRawParameterValue("deessEnd")->load()>0.5f?"END OF CHAIN":"POST EQ");
+  bool e=processor.state.getRawParameterValue("deessEnd")->load()>0.5f, r=processor.state.getRawParameterValue("moduleOrder")->load()>0.5f;
+  if(e!=lastEnd||r!=lastReverse){lastEnd=e;lastReverse=r;resized();}
+  dsEnd.setButtonText(processor.state.getRawParameterValue("deessEnd")->load()>0.5f?"END OF CHAIN":"POST BALLPARK");
   moduleOrder.setButtonText(processor.state.getRawParameterValue("moduleOrder")->load()>0.5f?"1176 > AMBIENCE":"AMBIENCE > 1176");
   processor.getEqResponse(responseCurve);
   if(++grNumericTicks>=3){grNumericTicks=0;grNumericDisplayed=processor.compReductionDb.load(std::memory_order_relaxed);}
@@ -39,18 +45,18 @@ private:
  int grNumericTicks=0;
  float grNumericDisplayed=0.f;
  juce::TextButton analyse{"EQ LISTEN (5 s)"};
- juce::ToggleButton enabled{"MATCH EQ"},tiltEnabled{"TILT EQ"};
+ juce::ToggleButton enabled{"ON"},tiltEnabled{"TILT EQ"};
  NumericSlider matchOutput,globalOutput;
  juce::ToggleButton globalBypass{"BYPASS"};
  std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> matchOutputAttachment,globalOutputAttachment;
  std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> globalBypassAttachment;
  NumericSlider blend,depth,tiltAmount,reverbWet,reverbLength;
- juce::ToggleButton reverbEnabled{"REVERB ON"},compEnabled{"COMPRESSOR ON"};
+ juce::ToggleButton reverbEnabled{"ON"},compEnabled{"ON"};
  NumericSlider compInput,compOutput,compAttack,compRelease;
  juce::ComboBox compRatio,compMode,referenceType;
  juce::TextButton moduleOrder{"AMBIENCE > 1176"};
  juce::TextButton meterReset{"RESET"};
- juce::ToggleButton sweetEnabled{"SWEETENING ON"};
+ juce::ToggleButton sweetEnabled{"ON"};
  NumericSlider sweetBass,sweetTreble,sweetFreq,sweetGain,sweetQ,sweetSat;
  std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> sweetEnableAttachment;
  std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> sweetBassAttachment,sweetTrebleAttachment,
