@@ -1,7 +1,7 @@
 name: DrumBus Windows VST3
 on:
   push:
-    branches: [main, feature/linear-phase-rms-v019]
+    branches: [main, feature/linear-phase-rms-v019, feature/drums-v032]
   workflow_dispatch:
 jobs:
   build:
@@ -15,11 +15,11 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
-          $plugin = Get-ChildItem build -Recurse -Directory -Filter 'LM18 DrumBus.vst3' | Select-Object -First 1
-          if (-not $plugin) { throw 'LM18 DrumBus.vst3 not found' }
-          Compress-Archive -Path $plugin.FullName -DestinationPath DrumBus-V0.30-Windows.zip
+          $plugin = Get-ChildItem build -Recurse -Directory -Filter 'LM18 DRUMS.vst3' | Select-Object -First 1
+          if (-not $plugin) { throw 'LM18 DRUMS.vst3 not found' }
+          Compress-Archive -Path $plugin.FullName -DestinationPath DRUMS-V0.32-Windows.zip
       - uses: actions/upload-artifact@v5
         with:
-          name: DrumBus-V0.30-Windows
-          path: DrumBus-V0.30-Windows.zip
+          name: DRUMS-V0.32-Windows
+          path: DRUMS-V0.32-Windows.zip
           if-no-files-found: error
