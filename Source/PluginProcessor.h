@@ -28,6 +28,7 @@ public:
  void getStateInformation(juce::MemoryBlock&) override;
  void setStateInformation(const void*,int) override;
  juce::AudioProcessorValueTreeState state;
+ std::array<std::array<std::atomic<float>,2>,2> deessGR{};
  std::atomic<int> analysisPercent{0};
  std::atomic<bool> matched{false};
  std::atomic<float> compReductionDb{0.f},compGrVuDb{0.f};
@@ -83,6 +84,9 @@ private:
   }
   void reset() noexcept {z1=z2=0.0;}
  };
+ struct DeessState { double low=0,band=0,power=0,rest=0,gain=0; };
+ std::array<std::array<DeessState,2>,2> deess{};
+ void processDeess(juce::AudioBuffer<float>&,int);
  std::array<std::array<SweetBiquad,sweetBands>,2> sweetBass{},sweetTreble{};
  std::array<SweetBiquad,2> sweetParam{};
  juce::SmoothedValue<float> sweetBassSmooth,sweetTrebleSmooth,sweetGainSmooth,sweetSatSmooth;
