@@ -36,6 +36,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumBusProcessor::params(){
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetQ",1},"Sweet Param Q",juce::NormalisableRange<float>(0.1f,20.f,0.01f,0.35f),1.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetSat",1},"Sweet Param SAT",juce::NormalisableRange<float>(0.f,100.f,0.1f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"referenceType",1},"Reference",juce::StringArray{"KIT","KICK","SNARE"},0));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"matchOutput",1},"Match Output dB",juce::NormalisableRange<float>(-24.f,24.f,0.1f),0.f));
+ p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"globalOutput",1},"Global Output dB",juce::NormalisableRange<float>(-24.f,24.f,0.1f),0.f));
+ p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"globalBypass",1},"Global Bypass",false));
  return {p.begin(),p.end()};
 }
 int DrumBusProcessor::bandForFrequency(double hz) const {
@@ -83,6 +86,9 @@ void DrumBusProcessor::analyseReference(){
 }
 void DrumBusProcessor::prepareToPlay(double sr,int block){
  rate=sr;
+ bypassDry.setSize(2,juce::jmax(1,block));
+ for(auto* v:{&matchOutputSmooth,&globalOutputSmooth,&bypassSmooth})v->reset(sr,0.02);
+ matchOutputSmooth.setCurrentAndTargetValue(1.f);globalOutputSmooth.setCurrentAndTargetValue(1.f);bypassSmooth.setCurrentAndTargetValue(0.f);
  captureSize=(int)std::ceil(sr*5.0);
  captured.setSize(1,captureSize);
  processed.setSize(2,juce::jmax(1,block));
@@ -128,6 +134,8 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  juce::ScopedNoDenormals nd;
  const int n=buffer.getNumSamples();
  if(buffer.getNumChannels()<2)return;
+ const bool canBypass=n<=bypassDry.getNumSamples();
+ if(canBypass)for(int c=0;c<2;++c)bypassDry.copyFrom(c,0,buffer,c,0,n);
  const bool listening=*state.getRawParameterValue("listen")>0.5f;
  double inputPowerBlock=0.0,inputPeakBlock=0.0;
  for(int c=0;c<2;++c){const auto* d=buffer.getReadPointer(c);for(int i=0;i<n;++i){inputPowerBlock+=(double)d[i]*d[i];inputPeakBlock=juce::jmax(inputPeakBlock,(double)std::abs(d[i]));}}
@@ -295,6 +303,8 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
   const float gain=rmsTrimSmooth.getNextValue();
   for(int c=0;c<2;++c)buffer.setSample(c,i,buffer.getSample(c,i)*gain);
  }
+ matchOutputSmooth.setTargetValue(juce::Decibels::decibelsToGain(state.getRawParameterValue("matchOutput")->load()));
+ for(int i=0;i<n;++i){const float g=matchOutputSmooth.getNextValue();for(int c=0;c<2;++c)buffer.setSample(c,i,buffer.getSample(c,i)*g);}
  // Sweetening EQ: minimum-phase IIR approximation of measured RedEQ
  // maximum-boost impulse responses (44.1 kHz reference).
  // Gain values are logarithmically scaled, negative controls invert dB curves.
@@ -338,6 +348,9 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
    buffer.setSample(c,i,x);
   }
  }
+ globalOutputSmooth.setTargetValue(juce::Decibels::decibelsToGain(state.getRawParameterValue("globalOutput")->load()));
+ bypassSmooth.setTargetValue(state.getRawParameterValue("globalBypass")->load()>0.5f?1.f:0.f);
+ for(int i=0;i<n;++i){const float g=globalOutputSmooth.getNextValue(),b=bypassSmooth.getNextValue();for(int c=0;c<2;++c){const float wet=buffer.getSample(c,i);buffer.setSample(c,i,g*(canBypass?wet+(bypassDry.getSample(c,i)-wet)*b:wet));}}
  // VU-style RMS bar: 300 ms power-domain integration.
  // Numeric RMS: cumulative energy average since RESET.
  // Numeric PEAK: maximum absolute sample since RESET.
