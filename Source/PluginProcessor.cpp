@@ -13,7 +13,7 @@ DrumBusProcessor::DrumBusProcessor()
 juce::AudioProcessorValueTreeState::ParameterLayout DrumBusProcessor::params(){
  std::vector<std::unique_ptr<juce::RangedAudioParameter>> p;
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"listen",1},"Analyse",false));
- p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"enable",1},"Match EQ",true));
+ p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"enable",1},"Ballpark EQ",true));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"blend",1},"EQ Blend",juce::NormalisableRange<float>(0.f,100.f,1.f),100.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"strength",1},"Match Depth",juce::NormalisableRange<float>(0.f,100.f,1.f),35.f));
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"tiltEnable",1},"Tilt EQ Enabled",false));
@@ -28,7 +28,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumBusProcessor::params(){
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"compAttack",1},"FET Attack ms",juce::NormalisableRange<float>(0.02f,0.8f,0.01f),0.3f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"compRelease",1},"FET Release ms",juce::NormalisableRange<float>(50.f,1100.f,1.f),200.f));
  p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"compRatio",1},"FET Ratio",juce::StringArray{"4:1","8:1","12:1","20:1"},0));
- p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"sweetEnable",1},"Sweetening EQ Enabled",false));
+ p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"sweetEnable",1},"Sweet Energy Enabled",false));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetBass",1},"RedEQ Bass Percent",juce::NormalisableRange<float>(-100.f,100.f,0.1f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetTreble",1},"RedEQ Treble Percent",juce::NormalisableRange<float>(-100.f,100.f,0.1f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetFreq",1},"Sweet Param Hz",juce::NormalisableRange<float>(20.f,20000.f,0.1f,0.25f),1000.f));
@@ -49,6 +49,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumBusProcessor::params(){
   f("Q",0.5f,5.f,0.01f,1.f);f("Sens",-60.f,20.f,0.1f,-10.f);f("Range",0.f,12.f,0.1f,6.f);f("Attack",0.1f,20.f,0.1f,2.f);f("Release",10.f,300.f,1.f,80.f);
   for(auto id:{"On","Listen","Delta"})p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{prefix+id,1},prefix+id,false));
  }
+ p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"powerEnable",1},"Power EQ Enabled",false));
  return {p.begin(),p.end()};
 }
 int DrumBusProcessor::bandForFrequency(double hz) const {
@@ -341,8 +342,9 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  const bool sweetOn=state.getRawParameterValue("sweetEnable")->load()>0.5f;
  sweetBassSmooth.setTargetValue(sweetOn?state.getRawParameterValue("sweetBass")->load()/100.f:0.f);
  sweetTrebleSmooth.setTargetValue(sweetOn?state.getRawParameterValue("sweetTreble")->load()/100.f:0.f);
- sweetGainSmooth.setTargetValue(sweetOn?state.getRawParameterValue("sweetGain")->load():0.f);
- sweetSatSmooth.setTargetValue(sweetOn?state.getRawParameterValue("sweetSat")->load()/100.f:0.f);
+ const bool powerOn=state.getRawParameterValue("powerEnable")->load()>0.5f;
+ sweetGainSmooth.setTargetValue(powerOn?state.getRawParameterValue("sweetGain")->load():0.f);
+ sweetSatSmooth.setTargetValue(powerOn?state.getRawParameterValue("sweetSat")->load()/100.f:0.f);
  const float paramFreq=state.getRawParameterValue("sweetFreq")->load();
  const float paramQ=state.getRawParameterValue("sweetQ")->load();
  for(int i=0;i<n;++i){
@@ -596,7 +598,11 @@ void DrumBusProcessor::getStateInformation(juce::MemoryBlock& out){
 void DrumBusProcessor::setStateInformation(const void* d,int n){
  auto xml=getXmlFromBinary(d,n);
  if(!xml||!xml->hasTagName(state.state.getType()))return;
- state.replaceState(juce::ValueTree::fromXml(*xml));
+ auto restoredState=juce::ValueTree::fromXml(*xml);
+ bool hasPower=false; float oldSweet=0.f;
+ for(int i=0;i<restoredState.getNumChildren();++i){auto child=restoredState.getChild(i);if(child.getProperty("id").toString()=="powerEnable")hasPower=true;if(child.getProperty("id").toString()=="sweetEnable")oldSweet=(float)child.getProperty("value");}
+ state.replaceState(restoredState);
+ if(!hasPower)if(auto* p=state.getParameter("powerEnable"))p->setValueNotifyingHost(oldSweet>0.5f?1.f:0.f);
  {
   juce::SpinLock::ScopedLockType lock(eqLock);
   savedMatchValid=false;
