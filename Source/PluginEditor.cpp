@@ -1,7 +1,7 @@
 #include "PluginEditor.h"
 DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p),processor(p){
  setLookAndFeel(&switchLook);
- setSize(1200,1230);
+ 
  for(auto* slider:{&matchOutput,&globalOutput}){
   addAndMakeVisible(*slider);
   slider->setSliderStyle(juce::Slider::LinearHorizontal);
@@ -95,161 +95,64 @@ DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p)
   for(int j=0;j<6;++j){auto& sl=dsSliders[b][j];addAndMakeVisible(sl);sl.setSliderStyle(juce::Slider::LinearHorizontal);sl.setTextBoxStyle(juce::Slider::TextBoxRight,false,80,24);sl.setNumDecimalPlacesToDisplay(j==0||j==5?0:j==1?2:1);sl.setTextValueSuffix(suffix[j]);auto id=prefix+ids[j];dsSA[b][j]=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,id,sl);initReset(sl,id.toRawUTF8());}
   for(int j=0;j<3;++j){auto& bt=dsButtons[b][j];bt.setButtonText(juce::String(switches[j]).toUpperCase());addAndMakeVisible(bt);dsBA[b][j]=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,prefix+switches[j],bt);}
  }
+ addAndMakeVisible(powerEnabled);
+ powerAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"powerEnable",powerEnabled);
+ for(auto* k:{&sweetBass,&sweetTreble,&sweetFreq,&sweetGain,&sweetQ,&sweetSat,&compInput,&compOutput,&compAttack,&compRelease}){
+ k->setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);k->setTextBoxStyle(juce::Slider::TextBoxBelow,false,80,22);}
+ for(auto* k:{&sweetBass,&sweetTreble,&sweetSat,&reverbWet,&reverbLength,&blend,&depth})k->setTextValueSuffix(" %");
+ for(auto* k:{&sweetGain,&compInput,&compOutput,&tiltAmount})k->setTextValueSuffix(" dB");
+ sweetFreq.setTextValueSuffix(" Hz");compAttack.setTextValueSuffix(" ms");compRelease.setTextValueSuffix(" ms");
+ setResizable(true,true);setResizeLimits(1500,850,2400,1400);setSize(1600,900);
  startTimerHz(10);
 }
-void DrumBusEditor::paint(juce::Graphics& g){
- const auto bg=juce::Colour(0xff101721),panel=juce::Colour(0xff1a2532),line=juce::Colour(0xff3dbadf);
- g.fillAll(bg);
 
- g.setColour(juce::Colours::white);
- g.setFont(juce::Font(juce::FontOptions(30.f).withStyle("Bold")));
- g.drawText("LM18 DRUMS",25,15,480,45,juce::Justification::centredLeft);
- g.setColour(juce::Colour(0xffa8b8ca));
- g.setFont(juce::Font(juce::FontOptions(16.f)));
- g.drawText("OUTPUT",490,20,75,30,juce::Justification::centredLeft);
- g.drawText("V0.36  |  GUI",1030,20,140,30,juce::Justification::centredRight);
- auto section=[&](juce::Rectangle<int> r,const juce::String& title){
-  g.setColour(panel);g.fillRoundedRectangle(r.toFloat(),12.f);
-  g.setColour(line);g.drawRoundedRectangle(r.toFloat().reduced(1.f),12.f,1.5f);
-  g.setColour(juce::Colours::white);g.setFont(juce::Font(juce::FontOptions(20.f).withStyle("Bold")));
-  g.drawText(title,r.getX()+18,r.getY()+15,r.getWidth()-36,35,juce::Justification::left);
- };
- section({18,80,570,455},"MATCH EQ");
- section({600,545,260,455},"REVERB / AMBIENCE");
- section({872,545,310,455},"FET COMPRESSOR");
- section({18,1010,1164,160},"SWEETENING EQ");
- section({600,80,582,222},"HARSHNESS");
- section({600,310,582,222},"SIZZLE");
- for(int b=0;b<2;++b){const int x=620;const char* labels[]={"FREQ","Q","SENS","RANGE","ATTACK","RELEASE"};g.setFont(juce::Font(juce::FontOptions(13.f)));g.setColour(juce::Colours::white);
- for(int j=0;j<6;++j)g.drawText(labels[j],x+(j%2)*270,132+b*230+(j/2)*34,70,28,juce::Justification::centredLeft);
- for(int c=0;c<2;++c){float gr=juce::jlimit(0.f,12.f,processor.deessGR[b][c].load());int yy=240+b*230+c*22;g.setColour(juce::Colours::white);g.drawText(c?"R":"L",x,yy,20,18,juce::Justification::centredLeft);g.setColour(panel.brighter());g.fillRect(x+24,yy+4,220,10);g.setColour(line);g.fillRect(x+24,yy+4,(int)(220*gr/12),10);g.drawText(juce::String(gr,1)+" dB",x+250,yy,75,18,juce::Justification::centredLeft);}
- }
- g.setColour(line);
- for(auto* button:{&enabled,&tiltEnabled,&reverbEnabled,&compEnabled,&sweetEnabled,&globalBypass})
-  g.drawRoundedRectangle(button->getBounds().toFloat().expanded(2.f),4.f,1.f);
- g.setColour(juce::Colour(0xffa8b8ca));
- g.setFont(juce::Font(juce::FontOptions(13.f)));
- g.drawText("MATCH OUTPUT",355,135,205,20,juce::Justification::centredLeft);
- g.drawText("RedEQ BASS",38,1063,112,23,juce::Justification::centredLeft);
- g.drawText("RedEQ TREBLE",615,1063,115,23,juce::Justification::centredLeft);
- g.drawText("Hz",38,1121,30,20,juce::Justification::centredLeft);
- g.drawText("dB",260,1121,30,20,juce::Justification::centredLeft);
- g.drawText("Q",496,1121,20,20,juce::Justification::centredLeft);
- g.drawText("SAT",727,1121,35,20,juce::Justification::centredLeft);
- const juce::Rectangle<float> graph(48.f,296.f,510.f,129.f);
- g.setColour(juce::Colour(0xff0b131d));g.fillRect(graph);
- g.setColour(juce::Colour(0xff33485a));
- for(int i=0;i<=6;++i){
-  float y=graph.getY()+i*graph.getHeight()/6.f;
-  g.drawHorizontalLine((int)y,graph.getX(),graph.getRight());
- }
- for(int i=0;i<=10;++i){
-  float x=graph.getX()+i*graph.getWidth()/10.f;
-  g.drawVerticalLine((int)x,graph.getY(),graph.getBottom());
- }
- g.setColour(juce::Colour(0xffa8b8ca));g.setFont(juce::Font(juce::FontOptions(14.f)));
- // Calculated frequency response of the actual cascaded EQ filters.
- // Display spans 20 Hz to 20 kHz and -30 to +30 dB.
- g.setColour(juce::Colour(0xff53677a));
- g.drawHorizontalLine((int)graph.getCentreY(),graph.getX(),graph.getRight());
- juce::Path curve;
- for(size_t i=0;i<responseCurve.size();++i){
-  const float x=graph.getX()+graph.getWidth()*(float)i/(float)(responseCurve.size()-1);
-  const float db=juce::jlimit(-30.f,30.f,responseCurve[i]);
-  const float y=graph.getCentreY()-db*graph.getHeight()/60.f;
-  if(i==0)curve.startNewSubPath(x,y);else curve.lineTo(x,y);
- }
- g.setColour(line);
- g.strokePath(curve,juce::PathStrokeType(2.f));
- g.setColour(juce::Colour(0xffa8b8ca));
- g.drawText("+30 dB",50,298,75,18,juce::Justification::left);
- g.drawText("0 dB",50,351,75,18,juce::Justification::left);
- g.drawText("-30 dB",50,404,75,18,juce::Justification::left);
- g.drawText("20 Hz",48,430,65,18,juce::Justification::left);
- g.drawText("1 kHz",293,430,65,18,juce::Justification::centred);
- g.drawText("20 kHz",490,430,68,18,juce::Justification::right);
- const juce::String status=processor.matched.load()?"MATCH READY":("ANALYSIS  "+juce::String(processor.analysisPercent.load())+" %");
- g.setColour(juce::Colours::white);g.drawText("MATCH DEPTH",40,208,125,25,juce::Justification::centredLeft);
- g.setColour(line);g.drawText(status,42,455,300,25,juce::Justification::centred);
- g.setColour(juce::Colours::white);g.drawText("EQ BLEND",40,495,110,25,juce::Justification::centredLeft);
- g.setColour(juce::Colour(0xffa8b8ca));
- g.saveState();g.addTransform(juce::AffineTransform::translation(0.f,465.f));
- g.drawText("REVERB BLEND",612,172,116,25,juce::Justification::centred);
- g.drawText("LENGTH",734,172,116,25,juce::Justification::centred);
- g.drawText("-100 ... +100",734,335,116,22,juce::Justification::centred);
- g.drawText("Room: LexRoom1.wav",610,407,240,32,juce::Justification::centred);
- g.drawText("1176-STYLE",888,137,120,25,juce::Justification::centredLeft);
- g.drawText("INPUT",888,180,78,25,juce::Justification::centredLeft);
- g.drawText("OUTPUT",888,225,78,25,juce::Justification::centredLeft);
- g.drawText("ATTACK",888,270,78,25,juce::Justification::centredLeft);
- g.drawText("RELEASE",888,315,78,25,juce::Justification::centredLeft);
- g.drawText("RATIO",888,363,78,25,juce::Justification::centredLeft);
- // Scaled gain-reduction meter, VU-style 300/500 ms ballistics.
- const float gr=juce::jlimit(0.f,30.f,processor.compGrVuDb.load());
- const juce::Rectangle<float> grTrack(903.f,417.f,246.f,12.f);
- g.setColour(juce::Colours::white);g.setFont(juce::Font(juce::FontOptions(13.f).withStyle("Bold")));
- g.drawText("GR",892,395,42,20,juce::Justification::centredLeft);
- g.setColour(juce::Colour(0xffa8b8ca));g.setFont(juce::Font(juce::FontOptions(12.f)));
- g.drawText(juce::String(grNumericDisplayed,1)+" dB",1080,395,72,20,juce::Justification::centredRight);
- g.setColour(juce::Colour(0xff243343));g.fillRoundedRectangle(grTrack,3.f);
- if(gr>0.01f){
-  g.setColour(juce::Colour(0xff3dbadf));
-  g.fillRoundedRectangle(grTrack.withWidth(grTrack.getWidth()*gr/30.f),3.f);
- }
- g.setColour(juce::Colour(0xffa8b8ca));g.setFont(juce::Font(juce::FontOptions(11.f)));
- for(const int tick:{0,5,10,15,20,25,30}){
-  const float x=grTrack.getX()+grTrack.getWidth()*(float)tick/30.f;
-  g.drawVerticalLine((int)std::round(x),430.f,435.f);
-  g.drawText(juce::String(tick),(int)x-12,435,24,15,juce::Justification::centred);
- }
- g.restoreState();
- // VU ballistics: the bar uses a 300 ms power integrator.
- // Peak and RMS text are accumulated from RESET until the next reset.
- auto meter=[&](int x,const juce::String& name,float peak,float rms,float vu){
-  const int y=1190,w=405,h=14;
-  g.setColour(juce::Colours::white);g.setFont(juce::Font(juce::FontOptions(14.f).withStyle("Bold")));
-  g.drawText(name,x,y-3,42,24,juce::Justification::centredLeft);
-  const int bx=x+45;
-  g.setColour(juce::Colour(0xff243343));g.fillRoundedRectangle((float)bx,(float)y,(float)w,(float)h,3.f);
-  const float level=juce::jlimit(0.f,1.f,(vu+60.f)/60.f);
-  g.setColour(juce::Colour(0xff3dbadf));
-  if(level>0.f)g.fillRoundedRectangle((float)bx,(float)y,(float)w*level,(float)h,3.f);
-  g.setColour(juce::Colour(0xffa8b8ca));g.setFont(juce::Font(juce::FontOptions(12.f)));
-  g.drawText("RMS AVG "+juce::String(rms,1)+" dBFS   PEAK MAX "+juce::String(peak,1)+" dBFS",bx,y+19,w,20,juce::Justification::centred);
- };
- meter(24,"IN",processor.inputPeakDb.load(),processor.inputRmsDb.load(),processor.inputVuDb.load());
- meter(540,"OUT",processor.outputPeakDb.load(),processor.outputRmsDb.load(),processor.outputVuDb.load());
-}
 void DrumBusEditor::resized(){
- dsDual.setBounds(1035,470,125,28);dsEnd.setBounds(1035,240,125,28);
- for(int b=0;b<2;++b){int x=620;for(int j=0;j<6;++j)dsSliders[b][j].setBounds(x+70+(j%2)*270,902+(j/2)*34,190,28);for(int j=0;j<3;++j)dsButtons[b][j].setBounds(x+250+j*95,95+b*230,90,28);}
- meterReset.setBounds(1075,1188,95,30);
- sweetEnabled.setBounds(952,1026,195,30);
- sweetBass.setBounds(155,1058,410,34);
- sweetTreble.setBounds(735,1058,410,34);
- sweetFreq.setBounds(65,1113,190,34);
- sweetGain.setBounds(290,1113,195,34);
- sweetQ.setBounds(516,1113,195,34);
- sweetSat.setBounds(765,1113,380,34);
- moduleOrder.setBounds(38,550,450,35);
- globalOutput.setBounds(565,20,230,30);
- globalBypass.setBounds(820,20,120,30);
- matchOutput.setBounds(355,155,205,40);
- analyse.setBounds(38,155,145,40);
- referenceType.setBounds(200,155,150,40);
- blend.setBounds(155,492,390,35);
- depth.setBounds(170,203,375,35);
- tiltAmount.setBounds(170,250,375,35);
- tiltEnabled.setBounds(38,250,125,35);
- enabled.setBounds(440,455,125,30);
- reverbWet.setBounds(612,675,116,125);
- reverbLength.setBounds(734,675,116,125);
- reverbEnabled.setBounds(668,920,125,30);
- compInput.setBounds(965,641,195,34);
- compOutput.setBounds(965,686,195,34);
- compAttack.setBounds(965,731,195,34);
- compRelease.setBounds(965,776,195,34);
- compRatio.setBounds(965,822,195,31);
- compMode.setBounds(1012,600,148,29);
- compEnabled.setBounds(962,920,190,30);
+ const int widths[]={280,300,175,220,180,220};
+ const int total=1375;
+ const bool e=processor.state.getRawParameterValue("deessEnd")->load()>0.5f,r=processor.state.getRawParameterValue("moduleOrder")->load()>0.5f;
+ std::vector<int> order{0};if(!e)order.push_back(1);order.push_back(r?3:2);order.push_back(r?2:3);order.push_back(4);order.push_back(5);if(e)order.push_back(1);
+ int x=10;const int h=getHeight()-160;
+ for(int id:order){int w=(getWidth()-60)*widths[id]/total;panels[id]={x,60,w,h};x+=w+8;}
+ auto place=[&](juce::Component& c,int id,int x,int y,int w,int h){auto p=panels[id];c.setBounds(p.getX()+x,p.getY()+y,w,h);};
+ auto head=[&](juce::Component& c,int id){place(c,id,panels[id].getWidth()-55,8,45,25);};
+ head(enabled,0);head(reverbEnabled,2);head(compEnabled,3);head(sweetEnabled,4);head(powerEnabled,5);
+ int w=panels[0].getWidth();place(referenceType,0,12,65,w-24,28);place(analyse,0,12,105,w-24,28);place(tiltEnabled,0,12,145,w-24,26);
+ juce::Slider* eq[]={&depth,&blend,&tiltAmount,&matchOutput};
+ for(int j=0;j<4;++j)place(*eq[j],0,12,360+j*75,w-24,32);
+ w=panels[1].getWidth();place(dsEnd,1,10,43,w-20,25);place(dsDual,1,10,75,w-20,25);
+ for(int b=0;b<2;++b){int y=110+b*305;for(int j=0;j<6;++j)place(dsSliders[b][j],1,58,y+25+j*36,w-68,25);for(int j=0;j<3;++j)place(dsButtons[b][j],1,10+j*(w-20)/3,y+244,(w-26)/3,23);}
+ auto knobs=[&](int id,std::initializer_list<juce::Slider*> list){int j=0;int n=(int)list.size();int top=65;int step=n==2?245:132;for(auto* k:list){place(*k,id,10,top+j*step,panels[id].getWidth()-20,n==2?190:105);++j;}};
+ knobs(2,{&reverbWet,&reverbLength});knobs(3,{&compInput,&compOutput,&compAttack,&compRelease});knobs(4,{&sweetBass,&sweetTreble});knobs(5,{&sweetFreq,&sweetGain,&sweetQ,&sweetSat});
+ w=panels[3].getWidth();place(compRatio,3,10,600,(w-28)/2,25);place(compMode,3,w/2+4,600,(w-28)/2,25);
+ moduleOrder.setBounds(getWidth()-240,12,230,30);
+ globalOutput.setBounds(getWidth()-340,getHeight()-83,320,30);globalBypass.setBounds(getWidth()-340,getHeight()-40,150,26);meterReset.setBounds(getWidth()-175,getHeight()-40,155,26);
+}
+void DrumBusEditor::paint(juce::Graphics& g){
+ auto bg=juce::Colour(0xff101721),panel=juce::Colour(0xff1a2532),cyan=juce::Colour(0xff3dbadf),muted=juce::Colour(0xffa8b8ca);
+ g.fillAll(bg);
+ auto label=[&](juce::String t,juce::Rectangle<int> r,float size=12.f){g.setColour(muted);g.setFont(juce::Font(juce::FontOptions(size)));g.drawFittedText(t,r,juce::Justification::centred,1);};
+ label("LM18 DRUMS | V0.37", {10,8,320,38},23.f);
+ const char* names[]={"BALLPARK EQ","DE-ESSER","AMBIENCE","1176","SWEET ENERGY","POWER EQ"};
+ for(int i=0;i<6;++i){auto p=panels[i];g.setColour(panel);g.fillRoundedRectangle(p.toFloat(),5);g.setColour(cyan);g.drawRoundedRectangle(p.toFloat(),5,1);label(names[i],p.withHeight(40).withTrimmedRight(i==1?0:55),15);}
+ auto at=[&](int id,int x,int y,int w,int h){return juce::Rectangle<int>(panels[id].getX()+x,panels[id].getY()+y,w,h);};
+ auto fmt=[](double v){return juce::String(v,std::abs(v)<1&&v!=0?2:std::abs(v)<10&&v!=std::round(v)?1:0);};
+ auto scale=[&](juce::Slider& sl,bool rotary){
+ auto b=sl.getBounds();auto lo=sl.getMinimum(),hi=sl.getMaximum();
+ g.setColour(muted);g.setFont(juce::Font(juce::FontOptions(10.f)));
+ if(rotary){auto cx=b.getCentreX();auto cy=b.getY()+(b.getHeight()-22)*0.5f;float rad=juce::jmin((float)b.getWidth(),(float)b.getHeight()-22)*0.48f;
+ for(int i=0;i<=20;++i){float a=juce::MathConstants<float>::pi*(-0.75f+1.5f*i/20.f);float sn=std::sin(a),cs=std::cos(a);g.drawLine(cx+sn*rad,cy-cs*rad,cx+sn*(rad+((i%5==0)?5:2)),cy-cs*(rad+((i%5==0)?5:2)),1);if(i%5==0){auto v=sl.proportionOfLengthToValue(i/20.0);g.drawText(fmt(v),(int)(cx+sn*(rad+13))-20,(int)(cy-cs*(rad+10))-6,40,12,juce::Justification::centred);}}
+ }else{int x=b.getX()+8,w=b.getWidth()-sl.getTextBoxWidth()-24,y=b.getBottom();for(int i=0;i<=20;++i){int xx=x+w*i/20;g.drawVerticalLine(xx,(float)y,(float)y+(i%5==0?5:2));if(i%5==0)g.drawText(fmt(sl.proportionOfLengthToValue(i/20.0)),xx-19,y+5,38,12,juce::Justification::centred);}}
+ };
+ const char* eqNames[]={"DEPTH","BLEND","TILT","OUTPUT"};juce::Slider* eq[]={&depth,&blend,&tiltAmount,&matchOutput};
+ for(int j=0;j<4;++j){label(eqNames[j],eq[j]->getBounds().translated(0,-23).withHeight(20));scale(*eq[j],false);}
+ auto graph=at(0,12,185,panels[0].getWidth()-24,140).toFloat();g.setColour(bg);g.fillRect(graph);g.setColour(muted);g.drawHorizontalLine((int)graph.getCentreY(),graph.getX(),graph.getRight());
+ juce::Path path;for(size_t i=0;i<responseCurve.size();++i){float x=graph.getX()+graph.getWidth()*i/(responseCurve.size()-1),y=graph.getCentreY()-juce::jlimit(-30.f,30.f,responseCurve[i])*graph.getHeight()/60.f;if(i==0)path.startNewSubPath(x,y);else path.lineTo(x,y);}g.setColour(cyan);g.strokePath(path,juce::PathStrokeType(2));
+ label(processor.matched.load()?"MATCH READY":"ANALYSIS "+juce::String(processor.analysisPercent.load())+" %",at(0,12,325,panels[0].getWidth()-24,20));
+ const char* dsNames[]={"Hz","Q","THR","RANGE","ATT","REL"};
+ for(int b=0;b<2;++b){int y=110+b*305;label(b?"SIZZLE":"HARSHNESS",at(1,10,y,panels[1].getWidth()-20,20),14);for(int j=0;j<6;++j){label(dsNames[j],at(1,5,y+25+j*36,52,25),10);scale(dsSliders[b][j],false);}for(int c=0;c<2;++c){auto rr=at(1,25,y+273+c*10,panels[1].getWidth()-40,5);g.setColour(bg);g.fillRect(rr);g.setColour(cyan);g.fillRect(rr.withWidth((int)(rr.getWidth()*juce::jlimit(0.f,12.f,processor.deessGR[b][c].load())/12.f)));}}
+ auto drawKnobs=[&](std::initializer_list<juce::Slider*> ks,std::initializer_list<const char*> ns){auto it=ns.begin();for(auto* k:ks){label(*it++,k->getBounds().translated(0,-20).withHeight(20));scale(*k,true);}};
+ drawKnobs({&reverbWet,&reverbLength},{"DRY / WET","LENGTH"});drawKnobs({&compInput,&compOutput,&compAttack,&compRelease},{"INPUT","OUTPUT","ATTACK","RELEASE"});drawKnobs({&sweetBass,&sweetTreble},{"BASS","TREBLE"});drawKnobs({&sweetFreq,&sweetGain,&sweetQ,&sweetSat},{"FREQ","GAIN","Q","SAT"});
+ auto gr=at(3,12,640,panels[3].getWidth()-24,10);g.setColour(bg);g.fillRect(gr);g.setColour(cyan);g.fillRect(gr.withWidth((int)(gr.getWidth()*juce::jlimit(0.f,30.f,processor.compGrVuDb.load())/30.f)));label("GR "+juce::String(grNumericDisplayed,1)+" dB",gr.translated(0,12).withHeight(18));
+ int mw=(getWidth()-380)/2;for(int i=0;i<2;++i){int x=10+i*mw,y=getHeight()-85;float vu=i?processor.outputVuDb.load():processor.inputVuDb.load(),peak=i?processor.outputPeakDb.load():processor.inputPeakDb.load(),rms=i?processor.outputRmsDb.load():processor.inputRmsDb.load();label(i?"OUTPUT":"INPUT",{x,y-22,mw-20,20});g.setColour(panel);g.fillRect(x,y,mw-20,14);g.setColour(cyan);g.fillRect(x,y,(int)((mw-20)*juce::jlimit(0.f,1.f,(vu+60)/60)),14);label("RMS "+juce::String(rms,1)+" dBFS | PEAK "+juce::String(peak,1)+" dBFS",{x,y+20,mw-20,22});}
+ label("GLOBAL OUTPUT",{getWidth()-340,getHeight()-108,320,20});scale(globalOutput,false);
 }
