@@ -39,6 +39,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumBusProcessor::params(){
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"matchOutput",1},"Match Output dB",juce::NormalisableRange<float>(-24.f,24.f,0.1f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"globalOutput",1},"Global Output dB",juce::NormalisableRange<float>(-24.f,24.f,0.1f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"globalBypass",1},"Global Bypass",false));
+ p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"moduleOrder",1},"Module Order",juce::StringArray{"Ambience > 1176","1176 > Ambience"},0));
  return {p.begin(),p.end()};
 }
 int DrumBusProcessor::bandForFrequency(double hz) const {
@@ -222,6 +223,23 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
    buffer.setSample(c,i,low*lowGain+(x-low)*highGain);
   }
  }
+ // Compare the same five-second input window with the complete DSP output.
+ if(listening && rmsSamples<captureSize){
+  const int count=juce::jmin(n,captureSize-rmsSamples);
+  for(int c=0;c<2;++c){const auto* d=buffer.getReadPointer(c);for(int i=0;i<count;++i)rmsOutputSum+=(double)d[i]*d[i];}
+  rmsSamples+=count;
+  if(rmsSamples>=captureSize && rmsInputSum>1.e-12 && rmsOutputSum>1.e-12){
+   rmsTrim=juce::jlimit(0.25f,4.f,(float)std::sqrt(rmsInputSum/rmsOutputSum));
+   rmsTrimSmooth.setTargetValue(rmsTrim);
+  }
+ }
+ for(int i=0;i<n;++i){
+  const float gain=rmsTrimSmooth.getNextValue();
+  for(int c=0;c<2;++c)buffer.setSample(c,i,buffer.getSample(c,i)*gain);
+ }
+ matchOutputSmooth.setTargetValue(juce::Decibels::decibelsToGain(state.getRawParameterValue("matchOutput")->load()));
+ for(int i=0;i<n;++i){const float g=matchOutputSmooth.getNextValue();for(int c=0;c<2;++c)buffer.setSample(c,i,buffer.getSample(c,i)*g);}
+ auto runAmbience=[&](){
  // Feed convolution every block to preserve tails and continuity.
  if(n<=reverbBuffer.getNumSamples()){
   for(int c=0;c<2;++c)reverbBuffer.copyFrom(c,0,buffer,c,0,n);
@@ -239,6 +257,9 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
    }
   }
  }
+
+ };
+ auto runCompressor=[&](){
  // Two independent detectors run continuously alongside the stereo-linked
  // detector. Crossfade their gain laws over 30 ms when changing modes.
  const bool compOn=state.getRawParameterValue("compEnable")->load()>0.5f;
@@ -289,22 +310,9 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  }
  compReductionDb.store(displayGr,std::memory_order_relaxed);
  compGrVuDb.store(compGrVuState,std::memory_order_relaxed);
- // Compare the same five-second input window with the complete DSP output.
- if(listening && rmsSamples<captureSize){
-  const int count=juce::jmin(n,captureSize-rmsSamples);
-  for(int c=0;c<2;++c){const auto* d=buffer.getReadPointer(c);for(int i=0;i<count;++i)rmsOutputSum+=(double)d[i]*d[i];}
-  rmsSamples+=count;
-  if(rmsSamples>=captureSize && rmsInputSum>1.e-12 && rmsOutputSum>1.e-12){
-   rmsTrim=juce::jlimit(0.25f,4.f,(float)std::sqrt(rmsInputSum/rmsOutputSum));
-   rmsTrimSmooth.setTargetValue(rmsTrim);
-  }
- }
- for(int i=0;i<n;++i){
-  const float gain=rmsTrimSmooth.getNextValue();
-  for(int c=0;c<2;++c)buffer.setSample(c,i,buffer.getSample(c,i)*gain);
- }
- matchOutputSmooth.setTargetValue(juce::Decibels::decibelsToGain(state.getRawParameterValue("matchOutput")->load()));
- for(int i=0;i<n;++i){const float g=matchOutputSmooth.getNextValue();for(int c=0;c<2;++c)buffer.setSample(c,i,buffer.getSample(c,i)*g);}
+
+ };
+ if(state.getRawParameterValue("moduleOrder")->load()>0.5f){runCompressor();runAmbience();}else{runAmbience();runCompressor();}
  // Sweetening EQ: minimum-phase IIR approximation of measured RedEQ
  // maximum-boost impulse responses (44.1 kHz reference).
  // Gain values are logarithmically scaled, negative controls invert dB curves.
