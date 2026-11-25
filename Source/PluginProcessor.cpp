@@ -40,12 +40,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumBusProcessor::params(){
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"globalOutput",1},"Global Output dB",juce::NormalisableRange<float>(-24.f,24.f,0.1f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"globalBypass",1},"Global Bypass",false));
  p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"moduleOrder",1},"Module Order",juce::StringArray{"Ambience > 1176","1176 > Ambience"},0));
+ p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"deessEnd",1},"Deesser End of Chain",false));
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"deessDual",1},"Deesser Dual Mono",false));
  for(int b=0;b<2;++b){
   const auto prefix=juce::String("ds")+juce::String(b);
   auto f=[&](const char* id,float lo,float hi,float step,float def){p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{prefix+id,1},prefix+id,juce::NormalisableRange<float>(lo,hi,step),def));};
   f("Freq",b?6000.f:2000.f,b?16000.f:7000.f,1.f,b?9000.f:4000.f);
-  f("Q",0.5f,5.f,0.01f,1.f);f("Sens",-40.f,20.f,0.1f,-10.f);f("Range",0.f,12.f,0.1f,6.f);f("Attack",0.1f,20.f,0.1f,2.f);f("Release",10.f,300.f,1.f,80.f);
+  f("Q",0.5f,5.f,0.01f,1.f);f("Sens",-60.f,20.f,0.1f,-10.f);f("Range",0.f,12.f,0.1f,6.f);f("Attack",0.1f,20.f,0.1f,2.f);f("Release",10.f,300.f,1.f,80.f);
   for(auto id:{"On","Listen","Delta"})p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{prefix+id,1},prefix+id,false));
  }
  return {p.begin(),p.end()};
@@ -248,7 +249,8 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  }
  matchOutputSmooth.setTargetValue(juce::Decibels::decibelsToGain(state.getRawParameterValue("matchOutput")->load()));
  for(int i=0;i<n;++i){const float g=matchOutputSmooth.getNextValue();for(int c=0;c<2;++c)buffer.setSample(c,i,buffer.getSample(c,i)*g);}
- processDeess(buffer,n);
+ const bool deessEnd=state.getRawParameterValue("deessEnd")->load()>0.5f;
+ if(!deessEnd)processDeess(buffer,n);
  auto runAmbience=[&](){
  // Feed convolution every block to preserve tails and continuity.
  if(n<=reverbBuffer.getNumSamples()){
@@ -366,6 +368,7 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
    buffer.setSample(c,i,x);
   }
  }
+ if(deessEnd)processDeess(buffer,n);
  globalOutputSmooth.setTargetValue(juce::Decibels::decibelsToGain(state.getRawParameterValue("globalOutput")->load()));
  bypassSmooth.setTargetValue(state.getRawParameterValue("globalBypass")->load()>0.5f?1.f:0.f);
  for(int i=0;i<n;++i){const float g=globalOutputSmooth.getNextValue(),b=bypassSmooth.getNextValue();for(int c=0;c<2;++c){const float wet=buffer.getSample(c,i);buffer.setSample(c,i,g*(canBypass?wet+(bypassDry.getSample(c,i)-wet)*b:wet));}}
