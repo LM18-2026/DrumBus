@@ -15,7 +15,7 @@ public:
  }
  juce::AudioProcessorEditor* createEditor() override;
  bool hasEditor() const override {return true;}
- const juce::String getName() const override {return "LM18 DrumBus";}
+ const juce::String getName() const override {return "LM18 DRUMS";}
  bool acceptsMidi() const override {return false;}
  bool producesMidi() const override {return false;}
  bool isMidiEffect() const override {return false;}
