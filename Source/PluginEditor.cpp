@@ -72,10 +72,10 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.fillAll(bg);
  g.setColour(juce::Colours::white);
  g.setFont(juce::Font(juce::FontOptions(30.f).withStyle("Bold")));
- g.drawText("LM18 DrumBus",25,15,480,45,juce::Justification::centredLeft);
+ g.drawText("LM18 DRUMS",25,15,480,45,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));
  g.setFont(juce::Font(juce::FontOptions(16.f)));
- g.drawText("V0.30  |  GUI",1030,20,140,30,juce::Justification::centredRight);
+ g.drawText("V0.32  |  GUI",1030,20,140,30,juce::Justification::centredRight);
  auto section=[&](juce::Rectangle<int> r,const juce::String& title){
   g.setColour(panel);g.fillRoundedRectangle(r.toFloat(),12.f);
   g.setColour(line);g.drawRoundedRectangle(r.toFloat().reduced(1.f),12.f,1.5f);
