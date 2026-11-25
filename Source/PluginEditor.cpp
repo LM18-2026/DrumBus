@@ -1,7 +1,7 @@
 #include "PluginEditor.h"
 DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p),processor(p){
  setLookAndFeel(&switchLook);
- setSize(1200,840);
+ setSize(1200,1090);
  for(auto* slider:{&matchOutput,&globalOutput}){
   addAndMakeVisible(*slider);
   slider->setSliderStyle(juce::Slider::LinearHorizontal);
@@ -84,6 +84,16 @@ DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p)
  processor.getEqResponse(responseCurve);
  const auto initReset=[&](NumericSlider& slider,const char* id){if(auto* p=processor.state.getParameter(id))slider.resetValue=p->convertFrom0to1(p->getDefaultValue());slider.addMouseListener(&slider,true);};
  initReset(matchOutput,"matchOutput");initReset(globalOutput,"globalOutput");initReset(blend,"blend");initReset(depth,"strength");initReset(tiltAmount,"tiltDb");initReset(reverbWet,"reverbMix");initReset(reverbLength,"reverbLength");initReset(compInput,"compInput");initReset(compOutput,"compOutput");initReset(compAttack,"compAttack");initReset(compRelease,"compRelease");initReset(sweetBass,"sweetBass");initReset(sweetTreble,"sweetTreble");initReset(sweetFreq,"sweetFreq");initReset(sweetGain,"sweetGain");initReset(sweetQ,"sweetQ");initReset(sweetSat,"sweetSat");
+ const char* ids[]={"Freq","Q","Sens","Range","Attack","Release"};
+ const char* suffix[]={" Hz",""," dB"," dB"," ms"," ms"};
+ const char* switches[]={"On","Listen","Delta"};
+ addAndMakeVisible(dsDual);
+ dsDualA=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"deessDual",dsDual);
+ for(int b=0;b<2;++b){
+  const auto prefix=juce::String("ds")+juce::String(b);
+  for(int j=0;j<6;++j){auto& sl=dsSliders[b][j];addAndMakeVisible(sl);sl.setSliderStyle(juce::Slider::LinearHorizontal);sl.setTextBoxStyle(juce::Slider::TextBoxRight,false,80,24);sl.setNumDecimalPlacesToDisplay(j==0||j==5?0:j==1?2:1);sl.setTextValueSuffix(suffix[j]);auto id=prefix+ids[j];dsSA[b][j]=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,id,sl);initReset(sl,id.toRawUTF8());}
+  for(int j=0;j<3;++j){auto& bt=dsButtons[b][j];bt.setButtonText(juce::String(switches[j]).toUpperCase());addAndMakeVisible(bt);dsBA[b][j]=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,prefix+switches[j],bt);}
+ }
  startTimerHz(10);
 }
 void DrumBusEditor::paint(juce::Graphics& g){
@@ -96,7 +106,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.setColour(juce::Colour(0xffa8b8ca));
  g.setFont(juce::Font(juce::FontOptions(16.f)));
  g.drawText("OUTPUT",490,20,75,30,juce::Justification::centredLeft);
- g.drawText("V0.34  |  GUI",1030,20,140,30,juce::Justification::centredRight);
+ g.drawText("V0.35  |  GUI",1030,20,140,30,juce::Justification::centredRight);
  auto section=[&](juce::Rectangle<int> r,const juce::String& title){
   g.setColour(panel);g.fillRoundedRectangle(r.toFloat(),12.f);
   g.setColour(line);g.drawRoundedRectangle(r.toFloat().reduced(1.f),12.f,1.5f);
@@ -107,6 +117,12 @@ void DrumBusEditor::paint(juce::Graphics& g){
  section({600,80,260,455},"REVERB / AMBIENCE");
  section({872,80,310,455},"FET COMPRESSOR");
  section({18,620,1164,160},"SWEETENING EQ");
+ section({18,850,570,222},"HARSHNESS");
+ section({600,850,582,222},"SIZZLE");
+ for(int b=0;b<2;++b){const int x=38+b*582;const char* labels[]={"FREQ","Q","SENS","RANGE","ATTACK","RELEASE"};g.setFont(juce::Font(juce::FontOptions(13.f)));g.setColour(juce::Colours::white);
+ for(int j=0;j<6;++j)g.drawText(labels[j],x+(j%2)*270,902+(j/2)*34,70,28,juce::Justification::centredLeft);
+ for(int c=0;c<2;++c){float gr=juce::jlimit(0.f,12.f,processor.deessGR[b][c].load());int yy=1010+c*22;g.setColour(juce::Colours::white);g.drawText(c?"R":"L",x,yy,20,18,juce::Justification::centredLeft);g.setColour(panel.brighter());g.fillRect(x+24,yy+4,220,10);g.setColour(line);g.fillRect(x+24,yy+4,(int)(220*gr/12),10);g.drawText(juce::String(gr,1)+" dB",x+250,yy,75,18,juce::Justification::centredLeft);}
+ }
  g.setColour(line);
  for(auto* button:{&enabled,&tiltEnabled,&reverbEnabled,&compEnabled,&sweetEnabled,&globalBypass})
   g.drawRoundedRectangle(button->getBounds().toFloat().expanded(2.f),4.f,1.f);
@@ -202,6 +218,8 @@ void DrumBusEditor::paint(juce::Graphics& g){
  meter(540,"OUT",processor.outputPeakDb.load(),processor.outputRmsDb.load(),processor.outputVuDb.load());
 }
 void DrumBusEditor::resized(){
+ dsDual.setBounds(1035,1018,125,28);
+ for(int b=0;b<2;++b){int x=38+b*582;for(int j=0;j<6;++j)dsSliders[b][j].setBounds(x+70+(j%2)*270,902+(j/2)*34,190,28);for(int j=0;j<3;++j)dsButtons[b][j].setBounds(x+250+j*95,865,90,28);}
  meterReset.setBounds(1075,798,95,30);
  sweetEnabled.setBounds(952,636,195,30);
  sweetBass.setBounds(155,668,410,34);
