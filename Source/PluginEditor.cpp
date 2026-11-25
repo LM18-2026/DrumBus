@@ -102,7 +102,7 @@ DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p)
  for(auto* k:{&sweetBass,&sweetTreble,&sweetSat,&reverbWet,&reverbLength,&blend,&depth})k->setTextValueSuffix(" %");
  for(auto* k:{&sweetGain,&compInput,&compOutput,&tiltAmount})k->setTextValueSuffix(" dB");
  sweetFreq.setTextValueSuffix(" Hz");compAttack.setTextValueSuffix(" ms");compRelease.setTextValueSuffix(" ms");
- setResizable(true,true);setResizeLimits(1500,850,2400,1400);setSize(1600,900);
+ setResizable(true,true);setResizeLimits(1500,900,2400,1400);setSize(1600,900);
  startTimerHz(10);
 }
 
@@ -120,12 +120,12 @@ void DrumBusEditor::resized(){
  juce::Slider* eq[]={&depth,&blend,&tiltAmount,&matchOutput};
  for(int j=0;j<4;++j)place(*eq[j],0,12,360+j*75,w-24,32);
  w=panels[1].getWidth();place(dsEnd,1,10,43,w-20,25);place(dsDual,1,10,75,w-20,25);
- for(int b=0;b<2;++b){int y=110+b*305;for(int j=0;j<6;++j)place(dsSliders[b][j],1,58,y+25+j*36,w-68,25);for(int j=0;j<3;++j)place(dsButtons[b][j],1,10+j*(w-20)/3,y+244,(w-26)/3,23);}
+ for(int b=0;b<2;++b){int y=110+b*305;for(int j=0;j<6;++j)place(dsSliders[b][j],1,58,y+25+j*36,w-68,18);for(int j=0;j<3;++j)place(dsButtons[b][j],1,10+j*(w-20)/3,y+244,(w-26)/3,23);}
  auto knobs=[&](int id,std::initializer_list<juce::Slider*> list){int j=0;int n=(int)list.size();int top=65;int step=n==2?245:132;for(auto* k:list){place(*k,id,10,top+j*step,panels[id].getWidth()-20,n==2?190:105);++j;}};
  knobs(2,{&reverbWet,&reverbLength});knobs(3,{&compInput,&compOutput,&compAttack,&compRelease});knobs(4,{&sweetBass,&sweetTreble});knobs(5,{&sweetFreq,&sweetGain,&sweetQ,&sweetSat});
  w=panels[3].getWidth();place(compRatio,3,10,600,(w-28)/2,25);place(compMode,3,w/2+4,600,(w-28)/2,25);
  moduleOrder.setBounds(getWidth()-240,12,230,30);
- globalOutput.setBounds(getWidth()-340,getHeight()-83,320,30);globalBypass.setBounds(getWidth()-340,getHeight()-40,150,26);meterReset.setBounds(getWidth()-175,getHeight()-40,155,26);
+ globalOutput.setBounds(getWidth()-340,getHeight()-90,320,25);globalBypass.setBounds(getWidth()-340,getHeight()-40,150,26);meterReset.setBounds(getWidth()-175,getHeight()-40,155,26);
 }
 void DrumBusEditor::paint(juce::Graphics& g){
  auto bg=juce::Colour(0xff101721),panel=juce::Colour(0xff1a2532),cyan=juce::Colour(0xff3dbadf),muted=juce::Colour(0xffa8b8ca);
@@ -149,10 +149,10 @@ void DrumBusEditor::paint(juce::Graphics& g){
  juce::Path path;for(size_t i=0;i<responseCurve.size();++i){float x=graph.getX()+graph.getWidth()*i/(responseCurve.size()-1),y=graph.getCentreY()-juce::jlimit(-30.f,30.f,responseCurve[i])*graph.getHeight()/60.f;if(i==0)path.startNewSubPath(x,y);else path.lineTo(x,y);}g.setColour(cyan);g.strokePath(path,juce::PathStrokeType(2));
  label(processor.matched.load()?"MATCH READY":"ANALYSIS "+juce::String(processor.analysisPercent.load())+" %",at(0,12,325,panels[0].getWidth()-24,20));
  const char* dsNames[]={"Hz","Q","THR","RANGE","ATT","REL"};
- for(int b=0;b<2;++b){int y=110+b*305;label(b?"SIZZLE":"HARSHNESS",at(1,10,y,panels[1].getWidth()-20,20),14);for(int j=0;j<6;++j){label(dsNames[j],at(1,5,y+25+j*36,52,25),10);scale(dsSliders[b][j],false);}for(int c=0;c<2;++c){auto rr=at(1,25,y+273+c*10,panels[1].getWidth()-40,5);g.setColour(bg);g.fillRect(rr);g.setColour(cyan);g.fillRect(rr.withWidth((int)(rr.getWidth()*juce::jlimit(0.f,12.f,processor.deessGR[b][c].load())/12.f)));}}
+ for(int b=0;b<2;++b){int y=110+b*305;label(b?"SIZZLE":"HARSHNESS",at(1,10,y,panels[1].getWidth()-20,20),14);for(int j=0;j<6;++j){label(dsNames[j],at(1,5,y+25+j*36,52,18),10);scale(dsSliders[b][j],false);}for(int c=0;c<2;++c){auto rr=at(1,25,y+273+c*10,panels[1].getWidth()-40,5);g.setColour(bg);g.fillRect(rr);g.setColour(cyan);g.fillRect(rr.withWidth((int)(rr.getWidth()*juce::jlimit(0.f,12.f,processor.deessGR[b][c].load())/12.f)));}}
  auto drawKnobs=[&](std::initializer_list<juce::Slider*> ks,std::initializer_list<const char*> ns){auto it=ns.begin();for(auto* k:ks){label(*it++,k->getBounds().translated(0,-20).withHeight(20));scale(*k,true);}};
  drawKnobs({&reverbWet,&reverbLength},{"DRY / WET","LENGTH"});drawKnobs({&compInput,&compOutput,&compAttack,&compRelease},{"INPUT","OUTPUT","ATTACK","RELEASE"});drawKnobs({&sweetBass,&sweetTreble},{"BASS","TREBLE"});drawKnobs({&sweetFreq,&sweetGain,&sweetQ,&sweetSat},{"FREQ","GAIN","Q","SAT"});
  auto gr=at(3,12,640,panels[3].getWidth()-24,10);g.setColour(bg);g.fillRect(gr);g.setColour(cyan);g.fillRect(gr.withWidth((int)(gr.getWidth()*juce::jlimit(0.f,30.f,processor.compGrVuDb.load())/30.f)));label("GR "+juce::String(grNumericDisplayed,1)+" dB",gr.translated(0,12).withHeight(18));
  int mw=(getWidth()-380)/2;for(int i=0;i<2;++i){int x=10+i*mw,y=getHeight()-85;float vu=i?processor.outputVuDb.load():processor.inputVuDb.load(),peak=i?processor.outputPeakDb.load():processor.inputPeakDb.load(),rms=i?processor.outputRmsDb.load():processor.inputRmsDb.load();label(i?"OUTPUT":"INPUT",{x,y-22,mw-20,20});g.setColour(panel);g.fillRect(x,y,mw-20,14);g.setColour(cyan);g.fillRect(x,y,(int)((mw-20)*juce::jlimit(0.f,1.f,(vu+60)/60)),14);label("RMS "+juce::String(rms,1)+" dBFS | PEAK "+juce::String(peak,1)+" dBFS",{x,y+20,mw-20,22});}
- label("GLOBAL OUTPUT",{getWidth()-340,getHeight()-108,320,20});scale(globalOutput,false);
+ label("GLOBAL OUTPUT",{getWidth()-340,getHeight()-113,320,20});scale(globalOutput,false);
 }
