@@ -59,5 +59,11 @@ private:
  std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> reverbEnableAttachment,compEnableAttachment;
  std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> compInputAttachment,compOutputAttachment,compAttackAttachment,compReleaseAttachment;
  std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> compRatioAttachment,compModeAttachment,referenceAttachment;
+ std::array<std::array<NumericSlider,6>,2> dsSliders;
+ std::array<std::array<juce::ToggleButton,3>,2> dsButtons;
+ juce::ToggleButton dsDual{"DUAL MONO"};
+ std::array<std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>,6>,2> dsSA;
+ std::array<std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>,3>,2> dsBA;
+ std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> dsDualA;
  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumBusEditor)
 };
