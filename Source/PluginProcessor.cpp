@@ -35,6 +35,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumBusProcessor::params(){
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetGain",1},"Sweet Param dB",juce::NormalisableRange<float>(-24.f,24.f,0.1f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetQ",1},"Sweet Param Q",juce::NormalisableRange<float>(0.1f,20.f,0.01f,0.35f),1.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetSat",1},"Sweet Param SAT",juce::NormalisableRange<float>(0.f,100.f,0.1f),0.f));
+ p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"referenceType",1},"Reference",juce::StringArray{"KIT","KICK","SNARE"},0));
  return {p.begin(),p.end()};
 }
 int DrumBusProcessor::bandForFrequency(double hz) const {
@@ -445,7 +446,10 @@ void DrumBusProcessor::buildMatch(){
  double meanDifference=0.0;
  int valid=0;
  for(int b=0;b<bands;++b){
-  const double ref=reference[(size_t)b];
+  static constexpr double kick[bands]={0,23012.9065,32819.5178,35458.2654,26686.1657,11125.1213,3256.435,743.716831,141.200481,10.348433,0.722451404,0.0844357813,0.186910321,0.209860175,0.0959276594,0.30783821,1.65221533,1.80850578,1.18414835,2.32944816,2.58425288,3.29470917,2.30675385,1.99919547,0.781651875,0.236490893,0.0746061171,0.0110440436,0.000756105168,0.000180178174};
+ static constexpr double snare[bands]={0,113.624411,73.7842233,54.5881284,109.748497,151.193458,256.216145,1815.51756,9812.83495,25163.8605,5565.03947,725.568563,390.170151,92.4212617,34.2767278,53.7171839,56.772181,39.9345564,23.0461627,18.9568403,24.5689212,39.8536711,38.694818,36.03272,25.4426527,11.6317847,3.90032822,1.3724013,0.270843731,0.0251365024};
+ const int refType=(int)state.getRawParameterValue("referenceType")->load();
+ const double ref=refType==1?kick[b]:refType==2?snare[b]:reference[(size_t)b];
   const double in=input[(size_t)b]/frames;
   if(ref>1.e-12 && in>1.e-12){
    difference[(size_t)b]=10.0*std::log10(ref/in);
