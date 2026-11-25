@@ -28,6 +28,7 @@ private:
   }
  } switchLook;
  void timerCallback() override {
+  dsEnd.setButtonText(processor.state.getRawParameterValue("deessEnd")->load()>0.5f?"END OF CHAIN":"POST EQ");
   moduleOrder.setButtonText(processor.state.getRawParameterValue("moduleOrder")->load()>0.5f?"1176 > AMBIENCE":"AMBIENCE > 1176");
   processor.getEqResponse(responseCurve);
   if(++grNumericTicks>=3){grNumericTicks=0;grNumericDisplayed=processor.compReductionDb.load(std::memory_order_relaxed);}
@@ -61,9 +62,9 @@ private:
  std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> compRatioAttachment,compModeAttachment,referenceAttachment;
  std::array<std::array<NumericSlider,6>,2> dsSliders;
  std::array<std::array<juce::ToggleButton,3>,2> dsButtons;
- juce::ToggleButton dsDual{"DUAL MONO"};
+ juce::ToggleButton dsDual{"DUAL MONO"},dsEnd{"END OF CHAIN"};
  std::array<std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>,6>,2> dsSA;
  std::array<std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>,3>,2> dsBA;
- std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> dsDualA;
+ std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> dsDualA,dsEndA;
  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumBusEditor)
 };
