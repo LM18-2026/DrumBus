@@ -1,7 +1,7 @@
 #include "PluginEditor.h"
 DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p),processor(p){
  setLookAndFeel(&switchLook);
- setSize(1200,1090);
+ setSize(1200,1230);
  for(auto* slider:{&matchOutput,&globalOutput}){
   addAndMakeVisible(*slider);
   slider->setSliderStyle(juce::Slider::LinearHorizontal);
@@ -87,7 +87,8 @@ DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p)
  const char* ids[]={"Freq","Q","Sens","Range","Attack","Release"};
  const char* suffix[]={" Hz",""," dB"," dB"," ms"," ms"};
  const char* switches[]={"On","Listen","Delta"};
- addAndMakeVisible(dsDual);
+ addAndMakeVisible(dsDual);addAndMakeVisible(dsEnd);
+ dsEndA=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"deessEnd",dsEnd);
  dsDualA=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"deessDual",dsDual);
  for(int b=0;b<2;++b){
   const auto prefix=juce::String("ds")+juce::String(b);
@@ -106,7 +107,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.setColour(juce::Colour(0xffa8b8ca));
  g.setFont(juce::Font(juce::FontOptions(16.f)));
  g.drawText("OUTPUT",490,20,75,30,juce::Justification::centredLeft);
- g.drawText("V0.35  |  GUI",1030,20,140,30,juce::Justification::centredRight);
+ g.drawText("V0.36  |  GUI",1030,20,140,30,juce::Justification::centredRight);
  auto section=[&](juce::Rectangle<int> r,const juce::String& title){
   g.setColour(panel);g.fillRoundedRectangle(r.toFloat(),12.f);
   g.setColour(line);g.drawRoundedRectangle(r.toFloat().reduced(1.f),12.f,1.5f);
@@ -114,14 +115,14 @@ void DrumBusEditor::paint(juce::Graphics& g){
   g.drawText(title,r.getX()+18,r.getY()+15,r.getWidth()-36,35,juce::Justification::left);
  };
  section({18,80,570,455},"MATCH EQ");
- section({600,80,260,455},"REVERB / AMBIENCE");
- section({872,80,310,455},"FET COMPRESSOR");
- section({18,620,1164,160},"SWEETENING EQ");
- section({18,850,570,222},"HARSHNESS");
- section({600,850,582,222},"SIZZLE");
- for(int b=0;b<2;++b){const int x=38+b*582;const char* labels[]={"FREQ","Q","SENS","RANGE","ATTACK","RELEASE"};g.setFont(juce::Font(juce::FontOptions(13.f)));g.setColour(juce::Colours::white);
- for(int j=0;j<6;++j)g.drawText(labels[j],x+(j%2)*270,902+(j/2)*34,70,28,juce::Justification::centredLeft);
- for(int c=0;c<2;++c){float gr=juce::jlimit(0.f,12.f,processor.deessGR[b][c].load());int yy=1010+c*22;g.setColour(juce::Colours::white);g.drawText(c?"R":"L",x,yy,20,18,juce::Justification::centredLeft);g.setColour(panel.brighter());g.fillRect(x+24,yy+4,220,10);g.setColour(line);g.fillRect(x+24,yy+4,(int)(220*gr/12),10);g.drawText(juce::String(gr,1)+" dB",x+250,yy,75,18,juce::Justification::centredLeft);}
+ section({600,545,260,455},"REVERB / AMBIENCE");
+ section({872,545,310,455},"FET COMPRESSOR");
+ section({18,1010,1164,160},"SWEETENING EQ");
+ section({600,80,582,222},"HARSHNESS");
+ section({600,310,582,222},"SIZZLE");
+ for(int b=0;b<2;++b){const int x=620;const char* labels[]={"FREQ","Q","SENS","RANGE","ATTACK","RELEASE"};g.setFont(juce::Font(juce::FontOptions(13.f)));g.setColour(juce::Colours::white);
+ for(int j=0;j<6;++j)g.drawText(labels[j],x+(j%2)*270,132+b*230+(j/2)*34,70,28,juce::Justification::centredLeft);
+ for(int c=0;c<2;++c){float gr=juce::jlimit(0.f,12.f,processor.deessGR[b][c].load());int yy=240+b*230+c*22;g.setColour(juce::Colours::white);g.drawText(c?"R":"L",x,yy,20,18,juce::Justification::centredLeft);g.setColour(panel.brighter());g.fillRect(x+24,yy+4,220,10);g.setColour(line);g.fillRect(x+24,yy+4,(int)(220*gr/12),10);g.drawText(juce::String(gr,1)+" dB",x+250,yy,75,18,juce::Justification::centredLeft);}
  }
  g.setColour(line);
  for(auto* button:{&enabled,&tiltEnabled,&reverbEnabled,&compEnabled,&sweetEnabled,&globalBypass})
@@ -129,12 +130,12 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.setColour(juce::Colour(0xffa8b8ca));
  g.setFont(juce::Font(juce::FontOptions(13.f)));
  g.drawText("MATCH OUTPUT",355,135,205,20,juce::Justification::centredLeft);
- g.drawText("RedEQ BASS",38,673,112,23,juce::Justification::centredLeft);
- g.drawText("RedEQ TREBLE",615,673,115,23,juce::Justification::centredLeft);
- g.drawText("Hz",38,731,30,20,juce::Justification::centredLeft);
- g.drawText("dB",260,731,30,20,juce::Justification::centredLeft);
- g.drawText("Q",496,731,20,20,juce::Justification::centredLeft);
- g.drawText("SAT",727,731,35,20,juce::Justification::centredLeft);
+ g.drawText("RedEQ BASS",38,1063,112,23,juce::Justification::centredLeft);
+ g.drawText("RedEQ TREBLE",615,1063,115,23,juce::Justification::centredLeft);
+ g.drawText("Hz",38,1121,30,20,juce::Justification::centredLeft);
+ g.drawText("dB",260,1121,30,20,juce::Justification::centredLeft);
+ g.drawText("Q",496,1121,20,20,juce::Justification::centredLeft);
+ g.drawText("SAT",727,1121,35,20,juce::Justification::centredLeft);
  const juce::Rectangle<float> graph(48.f,296.f,510.f,129.f);
  g.setColour(juce::Colour(0xff0b131d));g.fillRect(graph);
  g.setColour(juce::Colour(0xff33485a));
@@ -172,6 +173,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.setColour(line);g.drawText(status,42,455,300,25,juce::Justification::centred);
  g.setColour(juce::Colours::white);g.drawText("EQ BLEND",40,495,110,25,juce::Justification::centredLeft);
  g.setColour(juce::Colour(0xffa8b8ca));
+ g.saveState();g.addTransform(juce::AffineTransform::translation(0.f,465.f));
  g.drawText("REVERB BLEND",612,172,116,25,juce::Justification::centred);
  g.drawText("LENGTH",734,172,116,25,juce::Justification::centred);
  g.drawText("-100 ... +100",734,335,116,22,juce::Justification::centred);
@@ -200,10 +202,11 @@ void DrumBusEditor::paint(juce::Graphics& g){
   g.drawVerticalLine((int)std::round(x),430.f,435.f);
   g.drawText(juce::String(tick),(int)x-12,435,24,15,juce::Justification::centred);
  }
+ g.restoreState();
  // VU ballistics: the bar uses a 300 ms power integrator.
  // Peak and RMS text are accumulated from RESET until the next reset.
  auto meter=[&](int x,const juce::String& name,float peak,float rms,float vu){
-  const int y=800,w=405,h=14;
+  const int y=1190,w=405,h=14;
   g.setColour(juce::Colours::white);g.setFont(juce::Font(juce::FontOptions(14.f).withStyle("Bold")));
   g.drawText(name,x,y-3,42,24,juce::Justification::centredLeft);
   const int bx=x+45;
@@ -218,17 +221,17 @@ void DrumBusEditor::paint(juce::Graphics& g){
  meter(540,"OUT",processor.outputPeakDb.load(),processor.outputRmsDb.load(),processor.outputVuDb.load());
 }
 void DrumBusEditor::resized(){
- dsDual.setBounds(1035,1018,125,28);
- for(int b=0;b<2;++b){int x=38+b*582;for(int j=0;j<6;++j)dsSliders[b][j].setBounds(x+70+(j%2)*270,902+(j/2)*34,190,28);for(int j=0;j<3;++j)dsButtons[b][j].setBounds(x+250+j*95,865,90,28);}
- meterReset.setBounds(1075,798,95,30);
- sweetEnabled.setBounds(952,636,195,30);
- sweetBass.setBounds(155,668,410,34);
- sweetTreble.setBounds(735,668,410,34);
- sweetFreq.setBounds(65,723,190,34);
- sweetGain.setBounds(290,723,195,34);
- sweetQ.setBounds(516,723,195,34);
- sweetSat.setBounds(765,723,380,34);
- moduleOrder.setBounds(665,550,450,35);
+ dsDual.setBounds(1035,470,125,28);dsEnd.setBounds(1035,240,125,28);
+ for(int b=0;b<2;++b){int x=620;for(int j=0;j<6;++j)dsSliders[b][j].setBounds(x+70+(j%2)*270,902+(j/2)*34,190,28);for(int j=0;j<3;++j)dsButtons[b][j].setBounds(x+250+j*95,95+b*230,90,28);}
+ meterReset.setBounds(1075,1188,95,30);
+ sweetEnabled.setBounds(952,1026,195,30);
+ sweetBass.setBounds(155,1058,410,34);
+ sweetTreble.setBounds(735,1058,410,34);
+ sweetFreq.setBounds(65,1113,190,34);
+ sweetGain.setBounds(290,1113,195,34);
+ sweetQ.setBounds(516,1113,195,34);
+ sweetSat.setBounds(765,1113,380,34);
+ moduleOrder.setBounds(38,550,450,35);
  globalOutput.setBounds(565,20,230,30);
  globalBypass.setBounds(820,20,120,30);
  matchOutput.setBounds(355,155,205,40);
@@ -239,14 +242,14 @@ void DrumBusEditor::resized(){
  tiltAmount.setBounds(170,250,375,35);
  tiltEnabled.setBounds(38,250,125,35);
  enabled.setBounds(440,455,125,30);
- reverbWet.setBounds(612,210,116,125);
- reverbLength.setBounds(734,210,116,125);
- reverbEnabled.setBounds(668,455,125,30);
- compInput.setBounds(965,176,195,34);
- compOutput.setBounds(965,221,195,34);
- compAttack.setBounds(965,266,195,34);
- compRelease.setBounds(965,311,195,34);
- compRatio.setBounds(965,357,195,31);
- compMode.setBounds(1012,135,148,29);
- compEnabled.setBounds(962,455,190,30);
+ reverbWet.setBounds(612,675,116,125);
+ reverbLength.setBounds(734,675,116,125);
+ reverbEnabled.setBounds(668,920,125,30);
+ compInput.setBounds(965,641,195,34);
+ compOutput.setBounds(965,686,195,34);
+ compAttack.setBounds(965,731,195,34);
+ compRelease.setBounds(965,776,195,34);
+ compRatio.setBounds(965,822,195,31);
+ compMode.setBounds(1012,600,148,29);
+ compEnabled.setBounds(962,920,190,30);
 }
