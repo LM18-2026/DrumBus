@@ -1,6 +1,9 @@
 #include "PluginEditor.h"
 DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p),processor(p){
  setSize(1200,840);
+ addAndMakeVisible(referenceType);
+ referenceType.addItem("KIT",1);referenceType.addItem("KICK",2);referenceType.addItem("SNARE",3);
+ referenceAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.state,"referenceType",referenceType);
  addAndMakeVisible(sweetEnabled);
  sweetEnableAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"sweetEnable",sweetEnabled);
  auto addSweet=[&](juce::Slider& slider,const char* id,int digits){
@@ -186,6 +189,7 @@ void DrumBusEditor::resized(){
  sweetQ.setBounds(516,723,195,34);
  sweetSat.setBounds(765,723,380,34);
  analyse.setBounds(38,155,145,40);
+ referenceType.setBounds(200,155,150,40);
  blend.setBounds(155,492,390,35);
  depth.setBounds(170,203,375,35);
  tiltAmount.setBounds(170,250,375,35);
