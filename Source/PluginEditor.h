@@ -24,7 +24,7 @@ private:
  juce::Slider blend,depth,tiltAmount,reverbWet,reverbLength;
  juce::ToggleButton reverbEnabled{"REVERB ON"},compEnabled{"COMPRESSOR ON"};
  juce::Slider compInput,compOutput,compAttack,compRelease;
- juce::ComboBox compRatio,compMode,referenceType;
+ juce::ComboBox compRatio,compMode,referenceType,moduleOrder;
  juce::TextButton meterReset{"RESET"};
  juce::ToggleButton sweetEnabled{"SWEETENING ON"};
  juce::Slider sweetBass,sweetTreble,sweetFreq,sweetGain,sweetQ,sweetSat;
@@ -35,6 +35,6 @@ private:
  std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> blendAttachment,depthAttachment,tiltAmountAttachment,reverbWetAttachment,reverbLengthAttachment;
  std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> reverbEnableAttachment,compEnableAttachment;
  std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> compInputAttachment,compOutputAttachment,compAttackAttachment,compReleaseAttachment;
- std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> compRatioAttachment,compModeAttachment,referenceAttachment;
+ std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> compRatioAttachment,compModeAttachment,referenceAttachment,moduleOrderAttachment;
  JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumBusEditor)
 };
