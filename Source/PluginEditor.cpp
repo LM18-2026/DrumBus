@@ -16,7 +16,7 @@ DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p)
  addAndMakeVisible(moduleOrder);
  moduleOrder.onClick=[this]{if(auto* p=processor.state.getParameter("moduleOrder")){p->beginChangeGesture();p->setValueNotifyingHost(p->getValue()>0.5f?0.f:1.f);p->endChangeGesture();}};
  addAndMakeVisible(referenceType);
- referenceType.addItem("KIT",1);referenceType.addItem("KICK",2);referenceType.addItem("SNARE",3);
+ referenceType.addItem("KIT",1);referenceType.addItem("KICK",2);referenceType.addItem("SNARE",3);referenceType.addItem("HIHAT",4);
  referenceAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.state,"referenceType",referenceType);
  addAndMakeVisible(sweetEnabled);
  sweetEnableAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"sweetEnable",sweetEnabled);
@@ -96,7 +96,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  g.setColour(juce::Colour(0xffa8b8ca));
  g.setFont(juce::Font(juce::FontOptions(16.f)));
  g.drawText("OUTPUT",490,20,75,30,juce::Justification::centredLeft);
- g.drawText("V0.33  |  GUI",1030,20,140,30,juce::Justification::centredRight);
+ g.drawText("V0.34  |  GUI",1030,20,140,30,juce::Justification::centredRight);
  auto section=[&](juce::Rectangle<int> r,const juce::String& title){
   g.setColour(panel);g.fillRoundedRectangle(r.toFloat(),12.f);
   g.setColour(line);g.drawRoundedRectangle(r.toFloat().reduced(1.f),12.f,1.5f);
