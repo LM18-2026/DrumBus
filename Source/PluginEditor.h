@@ -7,7 +7,7 @@ public:
  void resized() override;
  ~DrumBusEditor() override { setLookAndFeel(nullptr); }
 private:
- struct NumericSlider : NumericSlider {
+ struct NumericSlider : juce::Slider {
   double getValueFromText(const juce::String& text) override { return juce::Slider::getValueFromText(text.replaceCharacter(',', '.')); }
   void mouseDoubleClick(const juce::MouseEvent& e) override {
    if(e.mods.isCtrlDown() && e.eventComponent != this){setValue(resetValue,juce::sendNotificationSync);return;}
