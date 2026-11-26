@@ -16,7 +16,7 @@ DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p)
  addAndMakeVisible(moduleOrder);
  moduleOrder.onClick=[this]{if(auto* p=processor.state.getParameter("moduleOrder")){p->beginChangeGesture();p->setValueNotifyingHost(p->getValue()>0.5f?0.f:1.f);p->endChangeGesture();}};
  addAndMakeVisible(referenceType);
- referenceType.addItem("KIT",1);referenceType.addItem("KICK",2);referenceType.addItem("SNARE",3);referenceType.addItem("HIHAT",4);
+ referenceType.addItem("KIT",1);referenceType.addItem("KICK",2);referenceType.addItem("SNARE",3);referenceType.addItem("HIHAT",4);referenceType.addItem("TOMS",5);
  referenceAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.state,"referenceType",referenceType);
  addAndMakeVisible(sweetEnabled);
  sweetEnableAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"sweetEnable",sweetEnabled);
@@ -37,7 +37,7 @@ DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p)
  sweetSatAttachment=std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(processor.state,"sweetSat",sweetSat);
  addAndMakeVisible(meterReset);
  meterReset.onClick=[this]{processor.resetMeters();};
- addAndMakeVisible(analyse);addAndMakeVisible(enabled);addAndMakeVisible(blend);addAndMakeVisible(depth);addAndMakeVisible(tiltAmount);addAndMakeVisible(tiltEnabled);addAndMakeVisible(reverbWet);addAndMakeVisible(reverbLength);addAndMakeVisible(reverbEnabled);addAndMakeVisible(compEnabled);addAndMakeVisible(compInput);addAndMakeVisible(compOutput);addAndMakeVisible(compAttack);addAndMakeVisible(compRelease);addAndMakeVisible(compRatio);addAndMakeVisible(compMode);
+ addAndMakeVisible(analyse);addAndMakeVisible(enabled);addAndMakeVisible(blend);addAndMakeVisible(depth);addAndMakeVisible(tiltAmount);addAndMakeVisible(reverbWet);addAndMakeVisible(reverbLength);addAndMakeVisible(reverbEnabled);addAndMakeVisible(compEnabled);addAndMakeVisible(compInput);addAndMakeVisible(compOutput);addAndMakeVisible(compAttack);addAndMakeVisible(compRelease);addAndMakeVisible(compRatio);addAndMakeVisible(compMode);
  compEnableAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"compEnable",compEnabled);
  compMode.addItem("STEREO",1);compMode.addItem("DUAL MONO",2);
  compModeAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.state,"compMode",compMode);
@@ -116,7 +116,7 @@ void DrumBusEditor::resized(){
  auto place=[&](juce::Component& c,int id,int x,int y,int w,int h){auto p=panels[id];c.setBounds(p.getX()+x,p.getY()+y,w,h);};
  auto head=[&](juce::Component& c,int id){place(c,id,panels[id].getWidth()-55,8,45,25);};
  head(enabled,0);head(reverbEnabled,2);head(compEnabled,3);head(sweetEnabled,4);head(powerEnabled,5);
- int w=panels[0].getWidth();place(referenceType,0,12,65,w-24,28);place(analyse,0,12,105,w-24,28);place(tiltEnabled,0,12,145,w-24,26);
+ int w=panels[0].getWidth();place(referenceType,0,12,65,w-24,28);place(analyse,0,12,105,w-24,28);
  juce::Slider* eq[]={&depth,&blend,&tiltAmount,&matchOutput};
  for(int j=0;j<4;++j)place(*eq[j],0,12,360+j*75,w-24,32);
  w=panels[1].getWidth();place(dsEnd,1,10,43,w-20,25);place(dsDual,1,10,75,w-20,25);
@@ -131,7 +131,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  auto bg=juce::Colour(0xff101721),panel=juce::Colour(0xff1a2532),cyan=juce::Colour(0xff3dbadf),muted=juce::Colour(0xffa8b8ca);
  g.fillAll(bg);
  auto label=[&](juce::String t,juce::Rectangle<int> r,float size=12.f){g.setColour(muted);g.setFont(juce::Font(juce::FontOptions(size)));g.drawFittedText(t,r,juce::Justification::centred,1);};
- label("LM18 DRUMS | V0.37", {10,8,320,38},23.f);
+ label("LM18 DRUMS | V0.38", {10,8,320,38},23.f);
  const char* names[]={"BALLPARK EQ","DE-ESSER","AMBIENCE","1176","SWEET ENERGY","POWER EQ"};
  for(int i=0;i<6;++i){auto p=panels[i];g.setColour(panel);g.fillRoundedRectangle(p.toFloat(),5);g.setColour(cyan);g.drawRoundedRectangle(p.toFloat(),5,1);label(names[i],p.withHeight(40).withTrimmedRight(i==1?0:55),15);}
  auto at=[&](int id,int x,int y,int w,int h){return juce::Rectangle<int>(panels[id].getX()+x,panels[id].getY()+y,w,h);};
