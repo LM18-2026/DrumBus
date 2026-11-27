@@ -36,6 +36,12 @@ public:
  std::atomic<float> inputVuDb{-100.f},outputVuDb{-100.f};
  void resetPlugin();
  void resetAutoEq();
+ struct CustomReference {std::array<double,30> power{};juce::String name;bool valid=false;};
+ static CustomReference analyseCustomFile(const juce::File&);
+ void setCustomReference(const CustomReference&);
+ CustomReference getCustomReference();
+ private: CustomReference customReference;
+ public:
  std::atomic<bool> autoEqResetRequested{false};
  void startAutoGain() noexcept {autoGainStatus.store(1);autoGainRequest.store(true);}
  std::atomic<int> autoGainStatus{0};
@@ -81,7 +87,7 @@ private:
  struct SweetBiquad {
   double b0=1,b1=0,b2=0,a1=0,a2=0,z1=0,z2=0;
   void setPeak(double sr,double hz,double q,double db) noexcept {
-   const double w=juce::MathConstants<double>::twoPi*juce::jlimit(10.0,sr*0.45,hz)/sr;
+   const double w=juce::MathConstants<double>::twoPi*juce::jlimit(10.0,sr*0.46,hz)/sr;
    const double alpha=std::sin(w)/(2.0*q),cs=std::cos(w),A=std::pow(10.0,db/40.0);
    const double inv=1.0/(1.0+alpha/A);
    b0=(1.0+alpha*A)*inv;b1=-2.0*cs*inv;b2=(1.0-alpha*A)*inv;
