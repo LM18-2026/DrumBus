@@ -13,9 +13,21 @@ private:
    if(e.mods.isCtrlDown() && e.eventComponent != this){setValue(resetValue,juce::sendNotificationSync);return;}
    juce::Slider::mouseDoubleClick(e);
   }
+  void mouseWheelMove(const juce::MouseEvent& e,const juce::MouseWheelDetails& wheel) override {
+   auto w=wheel;w.deltaX*=0.1f;w.deltaY*=0.1f;juce::Slider::mouseWheelMove(e,w);
+  }
+  void mouseDown(const juce::MouseEvent& e) override {
+   setMouseDragSensitivity(e.mods.isShiftDown()?2500:250);
+   juce::Slider::mouseDown(e);
+   if(e.eventComponent!=this)if(auto* l=dynamic_cast<juce::Label*>(e.eventComponent)){l->showEditor();if(auto* ed=l->getCurrentTextEditor())ed->selectAll();}
+  }
+  void mouseDrag(const juce::MouseEvent& e) override {
+   setMouseDragSensitivity(e.mods.isShiftDown()?2500:250);juce::Slider::mouseDrag(e);
+  }
   double resetValue=0;
  };
  struct SwitchLook : juce::LookAndFeel_V4 {
+  int getSliderThumbRadius(juce::Slider& s) override {return juce::roundToInt(1.25f*juce::LookAndFeel_V4::getSliderThumbRadius(s));}
   void drawToggleButton(juce::Graphics& g,juce::ToggleButton& b,bool,bool) override {
    auto r=b.getLocalBounds().toFloat().reduced(1.f);
    auto cyan=juce::Colour(0xff3dbadf);
@@ -29,13 +41,16 @@ private:
  } switchLook;
  std::array<juce::Rectangle<int>,6> panels{};
  bool lastEnd=false,lastReverse=false;
- juce::ToggleButton powerEnabled{"ON"};
+ juce::ToggleButton powerEnabled{"ON"},powerDelta{"SAT DELTA"},powerCut{"LOCUT 250 Hz"};
+ juce::TextButton rmsMatch{"RMS MATCH"},pluginReset{"RESET PLUGIN"};
+ std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> powerDeltaA,powerCutA;
  std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> powerAttachment;
  void timerCallback() override {
   bool e=processor.state.getRawParameterValue("deessEnd")->load()>0.5f, r=processor.state.getRawParameterValue("moduleOrder")->load()>0.5f;
   if(e!=lastEnd||r!=lastReverse){lastEnd=e;lastReverse=r;resized();}
-  dsEnd.setButtonText(processor.state.getRawParameterValue("deessEnd")->load()>0.5f?"END OF CHAIN":"POST BALLPARK");
+  dsEnd.setButtonText(processor.state.getRawParameterValue("deessEnd")->load()>0.5f?"END OF CHAIN":"POST AUTO EQ");
   moduleOrder.setButtonText(processor.state.getRawParameterValue("moduleOrder")->load()>0.5f?"1176 > AMBIENCE":"AMBIENCE > 1176");
+  powerDelta.setButtonText(powerDelta.getToggleState()?"SAT DELTA":"SAT FULL");
   processor.getEqResponse(responseCurve);
   if(++grNumericTicks>=3){grNumericTicks=0;grNumericDisplayed=processor.compReductionDb.load(std::memory_order_relaxed);}
   repaint();
