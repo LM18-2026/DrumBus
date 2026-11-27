@@ -154,6 +154,11 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  const bool canBypass=n<=bypassDry.getNumSamples();
  if(canBypass)for(int c=0;c<2;++c)bypassDry.copyFrom(c,0,buffer,c,0,n);
  if(resetRequested.exchange(false)){autoRemaining=autoSettle=0;autoGainStatus.store(0);autoGainRequest.store(false);matched.store(false);pendingEqBank.store(-1);eqFadeRemaining=0;eqCrossfading.store(false);capturedCount.store(0);readyToMatch.store(false);analysisPercent.store(0);rmsInputSum=rmsOutputSum=0;rmsSamples=0;rmsTrim=1.f;rmsTrimSmooth.setTargetValue(1.f);wasListening=false;deess={};powerLow={};for(auto& f:sweetParam)f.reset();for(auto& ch:sweetBass)for(auto& f:ch)f.reset();for(auto& ch:sweetTreble)for(auto& f:ch)f.reset();reverb.reset();compEnvelope={};compGainDb={};compStereoEnvelope=compStereoGainDb=compGrVuState=0.f;}
+ if(autoEqResetRequested.exchange(false)){
+  pendingEqBank.store(-1);eqFadeRemaining=0;eqCrossfading.store(false);
+  matched.store(false);capturedCount.store(0);readyToMatch.store(false);analysisPercent.store(0);
+  rmsInputSum=rmsOutputSum=0.0;rmsSamples=0;rmsTrim=1.f;rmsTrimSmooth.setTargetValue(1.f);wasListening=false;
+ }
  const bool listening=*state.getRawParameterValue("listen")>0.5f;
  double inputPowerBlock=0.0,inputPeakBlock=0.0;
  for(int c=0;c<2;++c){const auto* d=buffer.getReadPointer(c);for(int i=0;i<n;++i){inputPowerBlock+=(double)d[i]*d[i];inputPeakBlock=juce::jmax(inputPeakBlock,(double)std::abs(d[i]));}}
@@ -470,6 +475,7 @@ void DrumBusProcessor::loadScaledReverb(float amount){
   juce::dsp::Convolution::Trim::no,juce::dsp::Convolution::Normalise::no);
 }
 void DrumBusProcessor::timerCallback(){
+ if(autoEqResetRequested.load())return;
  if(autoGainStatus.load()==2){
  if(auto* p=state.getParameter("globalOutput")){
  const float db=juce::jlimit(-24.f,24.f,state.getRawParameterValue("globalOutput")->load()+autoGainCorrection.load());
@@ -512,7 +518,7 @@ void DrumBusProcessor::buildMatch(){
  for(int b=0;b<bands;++b){
   static constexpr double kick[bands]={0,23012.9065,32819.5178,35458.2654,26686.1657,11125.1213,3256.435,743.716831,141.200481,10.348433,0.722451404,0.0844357813,0.186910321,0.209860175,0.0959276594,0.30783821,1.65221533,1.80850578,1.18414835,2.32944816,2.58425288,3.29470917,2.30675385,1.99919547,0.781651875,0.236490893,0.0746061171,0.0110440436,0.000756105168,0.000180178174};
  static constexpr double snare[bands]={0,113.624411,73.7842233,54.5881284,109.748497,151.193458,256.216145,1815.51756,9812.83495,25163.8605,5565.03947,725.568563,390.170151,92.4212617,34.2767278,53.7171839,56.772181,39.9345564,23.0461627,18.9568403,24.5689212,39.8536711,38.694818,36.03272,25.4426527,11.6317847,3.90032822,1.3724013,0.270843731,0.0251365024};
- static constexpr double hihat[bands]={0,0.4697710434,0.4401157151,0.5904313398,0.4969907782,0.5113720115,0.4779544734,0.8925083351,4.229646169,14.7422889,23.89335588,52.50948979,76.28381982,75.74426331,89.7419121,92.54752436,52.46289473,45.5052884,77.42929255,51.8383674,56.76891944,67.4743989,121.5964745,194.2611981,256.8750435,313.4665997,224.5458618,108.3832643,42.11275357,4.6240953};
+ static constexpr double hihat[bands]={0,0.4697710434,0.4501157151,0.5904313398,0.4969907782,0.5113720115,0.4779544734,0.8925083351,4.229646169,14.7422889,23.89335588,52.50948979,76.28381982,75.74426331,89.7419121,92.54752436,52.46289473,45.5052884,77.42929255,51.8383674,56.76891944,67.4743989,121.5964745,194.2611981,256.8750435,313.4665997,224.5458618,108.3832643,42.11275357,4.6240953};
  static constexpr double toms[bands]={0,346.6493907,1319.825646,9641.232224,48678.20441,46347.76528,14747.23576,4183.488992,2601.295736,1046.719957,204.016777,148.684573,65.57174441,22.196884,24.97083969,21.7179861,8.00882968,9.487070391,9.307574722,6.146754879,4.514937824,3.490293198,4.739417105,3.57446419,3.490295672,1.776236364,0.7882059859,0.2167561661,0.02783932883,0.002906271852};
  static constexpr double ag1[bands]={0,120.633923,116.4780483,104.9934323,1078.894872,6092.11723,10622.03878,6869.090982,4839.318629,3424.854185,1482.649561,746.5671287,488.1213624,351.3301331,288.4755603,209.7665001,161.9956189,106.6341003,63.18390449,36.9321727,11.19774644,6.572940087,4.519531705,2.323714627,1.317464858,0.8386046698,0.4850015981,0.3518215452,0.1457702117,0.01487883461};
  static constexpr double pno1[bands]={0,47.7168450378,36.1250758573,37.3492321064,203.474131809,722.506061441,1270.65555011,3131.72294484,1985.69705624,1774.26101891,2870.99857609,3067.59892725,2316.86466743,2297.28687405,1463.34405545,530.846626301,278.184669355,113.141554516,42.0198988911,14.797440104,5.19717264327,1.72160610622,0.395328961031,0.099266406509,0.0254342219082,0.00772542835273,0.00302929667953,0.00116259660741,0.000688697011566,0.000614431593894};
@@ -679,6 +685,13 @@ void DrumBusProcessor::processDeess(juce::AudioBuffer<float>& buffer,int n){
  }
 }
 
+void DrumBusProcessor::resetAutoEq(){
+ for(const char* id:{"listen","tiltDb","matchOutput","blend","strength","enable"}){
+  if(auto* p=state.getParameter(id)){p->beginChangeGesture();p->setValueNotifyingHost(p->getDefaultValue());p->endChangeGesture();}
+ }
+ {juce::SpinLock::ScopedLockType lock(eqLock);savedMatchValid=false;savedMatchGains.fill(0.f);}
+ pendingEqBank.store(-1);readyToMatch.store(false);matched.store(false);analysisPercent.store(0);autoEqResetRequested.store(true);
+}
 void DrumBusProcessor::resetPlugin(){
  for(auto* p:getParameters()){p->beginChangeGesture();p->setValueNotifyingHost(p->getDefaultValue());p->endChangeGesture();}
  {juce::SpinLock::ScopedLockType lock(eqLock);savedMatchValid=false;savedMatchGains.fill(0.f);}
