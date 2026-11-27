@@ -1,12 +1,24 @@
 #pragma once
 #include "PluginProcessor.h"
-class DrumBusEditor : public juce::AudioProcessorEditor, private juce::Timer {
+class DrumBusEditor : public juce::AudioProcessorEditor, private juce::Timer, public juce::FileDragAndDropTarget {
 public:
  explicit DrumBusEditor(DrumBusProcessor&);
  void paint(juce::Graphics&) override;
  void resized() override;
- ~DrumBusEditor() override { setLookAndFeel(nullptr); }
+ ~DrumBusEditor() override {stopTimer();refChooser.reset();if(refWorker)refWorker->stopThread(-1);setLookAndFeel(nullptr);}
+ bool isInterestedInFileDrag(const juce::StringArray& files) override {return files.size()==1&&juce::File(files[0]).hasFileExtension("wav;aif;aiff;flac");}
+ void filesDropped(const juce::StringArray& files,int,int) override {if(isInterestedInFileDrag(files))startReference(juce::File(files[0]));}
 private:
+ juce::TextButton loadRef{"LOAD REF"};
+ juce::Label customName;
+ std::unique_ptr<juce::FileChooser> refChooser;
+ struct RefWorker : juce::Thread {
+  RefWorker():juce::Thread("Reference FFT"){}
+  juce::File file;DrumBusProcessor::CustomReference result;std::atomic<bool> done{false};
+  void run() override {result=DrumBusProcessor::analyseCustomFile(file);done.store(true);}
+ };
+ std::unique_ptr<RefWorker> refWorker;
+ void startReference(const juce::File&);
  struct NumericSlider : juce::Slider {
   double getValueFromText(const juce::String& text) override { return juce::Slider::getValueFromText(text.replaceCharacter(',', '.')); }
   void mouseDoubleClick(const juce::MouseEvent& e) override {
@@ -60,6 +72,12 @@ private:
   moduleOrder.setButtonText(processor.state.getRawParameterValue("moduleOrder")->load()>0.5f?"1176 > AMBIENCE":"AMBIENCE > 1176");
   powerDelta.setButtonText(powerDelta.getToggleState()?"SAT DELTA":"SAT FULL");
   const int ag=processor.autoGainStatus.load();rmsMatch.setButtonText(ag==1||ag==2?"MEASURING":ag==3?"RETRY GAIN":"AUTO GAIN");rmsMatch.setEnabled(ag!=1&&ag!=2);
+  if(refWorker&&refWorker->done.load()){
+   refWorker->stopThread(-1);
+   if(refWorker->result.valid){processor.setCustomReference(refWorker->result);customName.setText(refWorker->result.name,juce::dontSendNotification);}
+   else customName.setText("Invalid or silent file",juce::dontSendNotification);
+   refWorker.reset();loadRef.setEnabled(true);loadRef.setButtonText("LOAD REF");
+  }
   processor.getEqResponse(responseCurve);
   if(++grNumericTicks>=3){grNumericTicks=0;grNumericDisplayed=processor.compReductionDb.load(std::memory_order_relaxed);}
   repaint();
