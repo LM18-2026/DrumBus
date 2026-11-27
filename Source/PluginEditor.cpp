@@ -105,7 +105,7 @@ DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p)
  addAndMakeVisible(powerDelta);addAndMakeVisible(powerCut);addAndMakeVisible(rmsMatch);addAndMakeVisible(pluginReset);
  powerDeltaA=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"powerDelta",powerDelta);
  powerCutA=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"powerCut",powerCut);
- rmsMatch.onClick=[this]{const float in=processor.inputRmsDb.load(),out=processor.outputRmsDb.load();if(in<=-90.f||out<=-90.f)return;globalOutput.setValue(juce::jlimit(globalOutput.getMinimum(),globalOutput.getMaximum(),globalOutput.getValue()+in-out),juce::sendNotificationSync);processor.resetMeters();};
+ rmsMatch.onClick=[this]{processor.startAutoGain();};
  pluginReset.onClick=[this]{juce::Component::SafePointer<DrumBusEditor> safe(this);juce::AlertWindow::showAsync(juce::MessageBoxOptions().withIconType(juce::MessageBoxIconType::WarningIcon).withTitle("RESET PLUGIN").withMessage("Reset all parameters and analysis to factory defaults?").withButton("RESET").withButton("CANCEL").withAssociatedComponent(this),[safe](int result){if(result==1&&safe!=nullptr)safe->processor.resetPlugin();});};
  setResizable(true,true);setResizeLimits(1500,900,2400,1400);setSize(1600,900);
  startTimerHz(10);
@@ -138,7 +138,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  auto bg=juce::Colour(0xff101721),panel=juce::Colour(0xff1a2532),cyan=juce::Colour(0xff3dbadf),muted=juce::Colour(0xffd4e4f6);
  g.fillAll(bg);
  auto label=[&](juce::String t,juce::Rectangle<int> r,float size=12.f){g.setColour(muted);g.setFont(juce::Font(juce::FontOptions(size)));g.drawFittedText(t,r,juce::Justification::centred,1);};
- label("LM18 DRUMS | V0.39", {10,8,320,38},23.f);
+ label("LM18 DRUMS | V0.40", {10,8,320,38},23.f);
  const char* names[]={"AUTO EQ","DE-ESSER","AMBIENCE","1176","SWEET ENERGY","POWER EQ"};
  for(int i=0;i<6;++i){auto p=panels[i];g.setColour(panel);g.fillRoundedRectangle(p.toFloat(),5);g.setColour(cyan);g.drawRoundedRectangle(p.toFloat(),5,1);label(names[i],p.withHeight(40).withTrimmedRight(i==1?0:55),15);}
  auto at=[&](int id,int x,int y,int w,int h){return juce::Rectangle<int>(panels[id].getX()+x,panels[id].getY()+y,w,h);};
