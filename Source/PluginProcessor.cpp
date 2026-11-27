@@ -35,7 +35,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumBusProcessor::params(){
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetGain",1},"Sweet Param dB",juce::NormalisableRange<float>(-24.f,24.f,0.1f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetQ",1},"Sweet Param Q",juce::NormalisableRange<float>(0.1f,20.f,0.01f,0.35f),1.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"sweetSat",1},"Sweet Param SAT",juce::NormalisableRange<float>(0.f,100.f,0.1f),0.f));
- p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"referenceType",1},"Reference",juce::StringArray{"KIT","KICK","SNARE","HIHAT","TOMS","AG1","PNO1"},0));
+ p.push_back(std::make_unique<juce::AudioParameterChoice>(juce::ParameterID{"referenceType",1},"Reference",juce::StringArray{"KIT","KICK","SNARE","HIHAT","TOMS","AG1","PNO1","CUSTOM"},0));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"matchOutput",1},"Match Output dB",juce::NormalisableRange<float>(-24.f,24.f,0.1f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"globalOutput",1},"Global Output dB",juce::NormalisableRange<float>(-24.f,24.f,0.1f),0.f));
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"globalBypass",1},"Global Bypass",false));
@@ -345,7 +345,7 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
   1484.1,2417.,3936.1,6410.,10438.9,17000.};
  static constexpr double bassCurve[sweetBands]={
   15.390,3.432,6.616,3.129,3.160,1.151,0.462,-0.377,
-  -0.459,-0.489,-0.679,-0.738,-1.822,-6.612};
+  -0.469,-0.489,-0.679,-0.738,-1.822,-6.612};
  static constexpr double trebleCurve[sweetBands]={
   -0.017,0.145,0.058,0.085,0.043,-0.094,-0.239,-0.263,
   -0.109,0.317,1.340,3.518,7.565,6.789};
@@ -515,15 +515,17 @@ void DrumBusProcessor::buildMatch(){
  std::array<double,bands> difference{};
  double meanDifference=0.0;
  int valid=0;
+ const auto custom=getCustomReference();
  for(int b=0;b<bands;++b){
   static constexpr double kick[bands]={0,23012.9065,32819.5178,35458.2654,26686.1657,11125.1213,3256.435,743.716831,141.200481,10.348433,0.722451404,0.0844357813,0.186910321,0.209860175,0.0959276594,0.30783821,1.65221533,1.80850578,1.18414835,2.32944816,2.58425288,3.29470917,2.30675385,1.99919547,0.781651875,0.236490893,0.0746061171,0.0110440436,0.000756105168,0.000180178174};
  static constexpr double snare[bands]={0,113.624411,73.7842233,54.5881284,109.748497,151.193458,256.216145,1815.51756,9812.83495,25163.8605,5565.03947,725.568563,390.170151,92.4212617,34.2767278,53.7171839,56.772181,39.9345564,23.0461627,18.9568403,24.5689212,39.8536711,38.694818,36.03272,25.4426527,11.6317847,3.90032822,1.3724013,0.270843731,0.0251365024};
- static constexpr double hihat[bands]={0,0.4697710434,0.4501157151,0.5904313398,0.4969907782,0.5113720115,0.4779544734,0.8925083351,4.229646169,14.7422889,23.89335588,52.50948979,76.28381982,75.74426331,89.7419121,92.54752436,52.46289473,45.5052884,77.42929255,51.8383674,56.76891944,67.4743989,121.5964745,194.2611981,256.8750435,313.4665997,224.5458618,108.3832643,42.11275357,4.6240953};
+ static constexpr double hihat[bands]={0,0.4697710434,0.4601157151,0.5904313398,0.4969907782,0.5113720115,0.4779544734,0.8925083351,4.229646169,14.7422889,23.89335588,52.50948979,76.28381982,75.74426331,89.7419121,92.54752436,52.46289473,45.5052884,77.42929255,51.8383674,56.76891944,67.4743989,121.5964745,194.2611981,256.8750435,313.4665997,224.5458618,108.3832643,42.11275357,4.6240953};
  static constexpr double toms[bands]={0,346.6493907,1319.825646,9641.232224,48678.20441,46347.76528,14747.23576,4183.488992,2601.295736,1046.719957,204.016777,148.684573,65.57174441,22.196884,24.97083969,21.7179861,8.00882968,9.487070391,9.307574722,6.146754879,4.514937824,3.490293198,4.739417105,3.57446419,3.490295672,1.776236364,0.7882059859,0.2167561661,0.02783932883,0.002906271852};
  static constexpr double ag1[bands]={0,120.633923,116.4780483,104.9934323,1078.894872,6092.11723,10622.03878,6869.090982,4839.318629,3424.854185,1482.649561,746.5671287,488.1213624,351.3301331,288.4755603,209.7665001,161.9956189,106.6341003,63.18390449,36.9321727,11.19774644,6.572940087,4.519531705,2.323714627,1.317464858,0.8386046698,0.4850015981,0.3518215452,0.1457702117,0.01487883461};
  static constexpr double pno1[bands]={0,47.7168450378,36.1250758573,37.3492321064,203.474131809,722.506061441,1270.65555011,3131.72294484,1985.69705624,1774.26101891,2870.99857609,3067.59892725,2316.86466743,2297.28687405,1463.34405545,530.846626301,278.184669355,113.141554516,42.0198988911,14.797440104,5.19717264327,1.72160610622,0.395328961031,0.099266406509,0.0254342219082,0.00772542835273,0.00302929667953,0.00116259660741,0.000688697011566,0.000614431593894};
  const int refType=(int)state.getRawParameterValue("referenceType")->load();
- const double ref=refType==1?kick[b]:refType==2?snare[b]:refType==3?hihat[b]:refType==4?toms[b]:refType==5?ag1[b]:refType==6?pno1[b]:reference[(size_t)b];
+
+ const double ref=refType==1?kick[b]:refType==2?snare[b]:refType==3?hihat[b]:refType==4?toms[b]:refType==5?ag1[b]:refType==6?pno1[b]:refType==7&&custom.valid?custom.power[(size_t)b]:reference[(size_t)b];
   const double in=input[(size_t)b]/frames;
   if(ref>1.e-12 && in>1.e-12){
    difference[(size_t)b]=10.0*std::log10(ref/in);
@@ -559,7 +561,7 @@ void DrumBusProcessor::buildMatch(){
  for(int b=0;b<bands;++b){
   const double f=25.0*std::pow(20000.0/25.0,(b+0.5)/(double)bands);
   frequencies[b]=f;
-  const float center=(float)juce::jmin(f,rate*0.45);
+  const float center=(float)juce::jmin(f,rate*0.46);
   auto coeff=juce::dsp::IIR::Coefficients<float>::makePeakFilter(
    rate,center,4.0f,juce::Decibels::decibelsToGain(gains[(size_t)b]));
   for(int c=0;c<2;++c)*eqBanks[(size_t)next][(size_t)c][(size_t)b].coefficients=*coeff;
@@ -611,7 +613,7 @@ void DrumBusProcessor::restoreSavedMatch(){
   const double f=25.0*std::pow(20000.0/25.0,(b+0.5)/(double)bands);
   frequencies[(size_t)b]=f;
   auto coeff=juce::dsp::IIR::Coefficients<float>::makePeakFilter(
-   rate,(float)juce::jmin(f,rate*0.45),4.0f,
+   rate,(float)juce::jmin(f,rate*0.46),4.0f,
    juce::Decibels::decibelsToGain(savedMatchGains[(size_t)b]));
   for(int c=0;c<2;++c)
    *eqBanks[(size_t)next][(size_t)c][(size_t)b].coefficients=*coeff;
@@ -620,10 +622,55 @@ void DrumBusProcessor::restoreSavedMatch(){
   for(auto& filter:channel)filter.reset();
  pendingEqBank.store(next,std::memory_order_release);
 }
+DrumBusProcessor::CustomReference DrumBusProcessor::analyseCustomFile(const juce::File& file){
+ CustomReference result;
+ juce::AudioFormatManager formats;formats.registerBasicFormats();
+ std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file));
+ if(!reader||reader->sampleRate<=0||reader->lengthInSamples<=0)return result;
+ juce::dsp::FFT transform(fftOrder);
+ juce::AudioBuffer<float> audio(2,fftSize);
+ std::array<float,fftSize*2> data{};
+ std::array<int,bands> counts{};
+ const int channels=juce::jmin(2,(int)reader->numChannels);
+ if(channels<1)return result;
+ double frames=0;
+ for(juce::int64 offset=0;offset<reader->lengthInSamples;offset+=fftSize/2){
+  if(auto* thread=juce::Thread::getCurrentThread())if(thread->threadShouldExit())return {};
+  audio.clear();
+  const int length=(int)juce::jmin((juce::int64)fftSize,reader->lengthInSamples-offset);
+  if(!reader->read(&audio,0,length,offset,true,true))return {};
+  for(int c=0;c<channels;++c){
+   data.fill(0);counts.fill(0);std::array<double,bands> power{};
+   for(int i=0;i<fftSize;++i)data[i]=audio.getSample(c,i)*(0.5f-0.5f*std::cos(juce::MathConstants<float>::twoPi*i/(fftSize-1)));
+   transform.performRealOnlyForwardTransform(data.data());
+   for(int i=1;i<fftSize/2;++i){
+    const double hz=i*reader->sampleRate/fftSize;if(hz<25||hz>20000)continue;
+    const int b=juce::jlimit(0,bands-1,(int)(bands*std::log(hz/25)/std::log(20000.0/25)));
+    const double re=data[2*i],im=data[2*i+1];power[b]+=re*re+im*im;++counts[b];
+   }
+   for(int b=0;b<bands;++b)if(counts[b])result.power[b]+=power[b]/counts[b];
+   ++frames;
+  }
+ }
+ double sum=0;for(auto& v:result.power){v/=juce::jmax(1.0,frames);sum+=v;}
+ result.valid=std::isfinite(sum)&&sum>1.e-12;result.name=file.getFileName();return result;
+}
+void DrumBusProcessor::setCustomReference(const CustomReference& ref){
+ if(!ref.valid)return;
+ resetAutoEq();
+ {juce::SpinLock::ScopedLockType lock(eqLock);customReference=ref;}
+ if(auto* p=state.getParameter("referenceType")){p->beginChangeGesture();p->setValueNotifyingHost(p->convertTo0to1(7.f));p->endChangeGesture();}
+}
+DrumBusProcessor::CustomReference DrumBusProcessor::getCustomReference(){
+ juce::SpinLock::ScopedLockType lock(eqLock);return customReference;
+}
 void DrumBusProcessor::getStateInformation(juce::MemoryBlock& out){
  auto xml=state.copyState().createXml();
  {
   juce::SpinLock::ScopedLockType lock(eqLock);
+  while(auto* old=xml->getChildByName("CUSTOM_REFERENCE"))xml->removeChildElement(old,true);
+  auto* cr=xml->createNewChildElement("CUSTOM_REFERENCE");cr->setAttribute("valid",customReference.valid);cr->setAttribute("name",customReference.name);
+  if(customReference.valid)for(int b=0;b<bands;++b)cr->setAttribute("band"+juce::String(b),customReference.power[b]);
   auto* eqState=xml->createNewChildElement("MATCH_EQ_SNAPSHOT");
   eqState->setAttribute("valid",savedMatchValid);
   if(savedMatchValid)
@@ -642,6 +689,12 @@ void DrumBusProcessor::setStateInformation(const void* d,int n){
  if(!hasPower)if(auto* p=state.getParameter("powerEnable"))p->setValueNotifyingHost(oldSweet>0.5f?1.f:0.f);
  {
   juce::SpinLock::ScopedLockType lock(eqLock);
+  customReference={};
+  if(auto* cr=xml->getChildByName("CUSTOM_REFERENCE")){
+   customReference.valid=cr->getBoolAttribute("valid");customReference.name=cr->getStringAttribute("name");
+   double sum=0;for(int b=0;b<bands;++b){double v=cr->getDoubleAttribute("band"+juce::String(b),-1);if(!std::isfinite(v)||v<0){customReference.valid=false;break;}customReference.power[b]=v;sum+=v;}
+   if(!std::isfinite(sum)||sum<=0)customReference.valid=false;
+  }
   savedMatchValid=false;
   if(const auto* eqState=xml->getChildByName("MATCH_EQ_SNAPSHOT")){
    if(eqState->getBoolAttribute("valid",false)){
@@ -672,7 +725,7 @@ void DrumBusProcessor::processDeess(juce::AudioBuffer<float>& buffer,int n){
  for(int b=0;b<2;++b){
  const auto prefix=juce::String("ds")+juce::String(b);
  auto p=[&](const char* id){return state.getRawParameterValue(prefix+id)->load();};
- const double g=std::tan(juce::MathConstants<double>::pi*juce::jmin((double)p("Freq"),rate*0.45)/rate),k=1.0/p("Q"),a=1.0/(1.0+g*(g+k));
+ const double g=std::tan(juce::MathConstants<double>::pi*juce::jmin((double)p("Freq"),rate*0.46)/rate),k=1.0/p("Q"),a=1.0/(1.0+g*(g+k));
  const double attack=std::exp(-1000.0/(rate*p("Attack"))),release=std::exp(-1000.0/(rate*p("Release"))),smooth=std::exp(-1.0/(rate*0.003));
  const double sens=p("Sens"),range=p("Range");const bool on=p("On")>0.5f,listen=p("Listen")>0.5f,delta=p("Delta")>0.5f;
  for(int i=0;i<n;++i){
