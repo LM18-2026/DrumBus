@@ -102,6 +102,11 @@ DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p)
  for(auto* k:{&sweetBass,&sweetTreble,&sweetSat,&reverbWet,&reverbLength,&blend,&depth})k->setTextValueSuffix(" %");
  for(auto* k:{&sweetGain,&compInput,&compOutput,&tiltAmount})k->setTextValueSuffix(" dB");
  sweetFreq.setTextValueSuffix(" Hz");compAttack.setTextValueSuffix(" ms");compRelease.setTextValueSuffix(" ms");
+ addAndMakeVisible(powerDelta);addAndMakeVisible(powerCut);addAndMakeVisible(rmsMatch);addAndMakeVisible(pluginReset);
+ powerDeltaA=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"powerDelta",powerDelta);
+ powerCutA=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"powerCut",powerCut);
+ rmsMatch.onClick=[this]{const float in=processor.inputRmsDb.load(),out=processor.outputRmsDb.load();if(in<=-90.f||out<=-90.f)return;globalOutput.setValue(juce::jlimit(globalOutput.getMinimum(),globalOutput.getMaximum(),globalOutput.getValue()+in-out),juce::sendNotificationSync);processor.resetMeters();};
+ pluginReset.onClick=[this]{juce::Component::SafePointer<DrumBusEditor> safe(this);juce::AlertWindow::showAsync(juce::MessageBoxOptions().withIconType(juce::MessageBoxIconType::WarningIcon).withTitle("RESET PLUGIN").withMessage("Reset all parameters and analysis to factory defaults?").withButton("RESET").withButton("CANCEL").withAssociatedComponent(this),[safe](int result){if(result==1&&safe!=nullptr)safe->processor.resetPlugin();});};
  setResizable(true,true);setResizeLimits(1500,900,2400,1400);setSize(1600,900);
  startTimerHz(10);
 }
@@ -124,15 +129,17 @@ void DrumBusEditor::resized(){
  auto knobs=[&](int id,std::initializer_list<juce::Slider*> list){int j=0;int n=(int)list.size();int top=65;int step=n==2?245:132;for(auto* k:list){place(*k,id,10,top+j*step,panels[id].getWidth()-20,n==2?190:105);++j;}};
  knobs(2,{&reverbWet,&reverbLength});knobs(3,{&compInput,&compOutput,&compAttack,&compRelease});knobs(4,{&sweetBass,&sweetTreble});knobs(5,{&sweetFreq,&sweetGain,&sweetQ,&sweetSat});
  w=panels[3].getWidth();place(compRatio,3,10,600,(w-28)/2,25);place(compMode,3,w/2+4,600,(w-28)/2,25);
+ place(powerDelta,5,10,600,panels[5].getWidth()-20,25);place(powerCut,5,10,632,panels[5].getWidth()-20,25);
+ pluginReset.setBounds(getWidth()-400,12,150,30);
  moduleOrder.setBounds(getWidth()-240,12,230,30);
- globalOutput.setBounds(getWidth()-340,getHeight()-90,320,25);globalBypass.setBounds(getWidth()-340,getHeight()-40,150,26);meterReset.setBounds(getWidth()-175,getHeight()-40,155,26);
+ globalOutput.setBounds(getWidth()-340,getHeight()-90,320,25);globalBypass.setBounds(getWidth()-340,getHeight()-40,100,26);rmsMatch.setBounds(getWidth()-232,getHeight()-40,100,26);meterReset.setBounds(getWidth()-124,getHeight()-40,104,26);
 }
 void DrumBusEditor::paint(juce::Graphics& g){
- auto bg=juce::Colour(0xff101721),panel=juce::Colour(0xff1a2532),cyan=juce::Colour(0xff3dbadf),muted=juce::Colour(0xffa8b8ca);
+ auto bg=juce::Colour(0xff101721),panel=juce::Colour(0xff1a2532),cyan=juce::Colour(0xff3dbadf),muted=juce::Colour(0xffd4e4f6);
  g.fillAll(bg);
  auto label=[&](juce::String t,juce::Rectangle<int> r,float size=12.f){g.setColour(muted);g.setFont(juce::Font(juce::FontOptions(size)));g.drawFittedText(t,r,juce::Justification::centred,1);};
- label("LM18 DRUMS | V0.38", {10,8,320,38},23.f);
- const char* names[]={"BALLPARK EQ","DE-ESSER","AMBIENCE","1176","SWEET ENERGY","POWER EQ"};
+ label("LM18 DRUMS | V0.39", {10,8,320,38},23.f);
+ const char* names[]={"AUTO EQ","DE-ESSER","AMBIENCE","1176","SWEET ENERGY","POWER EQ"};
  for(int i=0;i<6;++i){auto p=panels[i];g.setColour(panel);g.fillRoundedRectangle(p.toFloat(),5);g.setColour(cyan);g.drawRoundedRectangle(p.toFloat(),5,1);label(names[i],p.withHeight(40).withTrimmedRight(i==1?0:55),15);}
  auto at=[&](int id,int x,int y,int w,int h){return juce::Rectangle<int>(panels[id].getX()+x,panels[id].getY()+y,w,h);};
  auto fmt=[](double v){return juce::String(v,std::abs(v)<1&&v!=0?2:std::abs(v)<10&&v!=std::round(v)?1:0);};
@@ -147,7 +154,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  for(int j=0;j<4;++j){label(eqNames[j],eq[j]->getBounds().translated(0,-23).withHeight(20));scale(*eq[j],false);}
  auto graph=at(0,12,185,panels[0].getWidth()-24,140).toFloat();g.setColour(bg);g.fillRect(graph);g.setColour(muted);g.drawHorizontalLine((int)graph.getCentreY(),graph.getX(),graph.getRight());
  juce::Path path;for(size_t i=0;i<responseCurve.size();++i){float x=graph.getX()+graph.getWidth()*i/(responseCurve.size()-1),y=graph.getCentreY()-juce::jlimit(-30.f,30.f,responseCurve[i])*graph.getHeight()/60.f;if(i==0)path.startNewSubPath(x,y);else path.lineTo(x,y);}g.setColour(cyan);g.strokePath(path,juce::PathStrokeType(2));
- label(processor.matched.load()?"MATCH READY":"ANALYSIS "+juce::String(processor.analysisPercent.load())+" %",at(0,12,325,panels[0].getWidth()-24,20));
+ label(processor.matched.load()?"AUTO EQ READY":"ANALYSIS "+juce::String(processor.analysisPercent.load())+" %",at(0,12,325,panels[0].getWidth()-24,20));
  const char* dsNames[]={"Hz","Q","THR","RANGE","ATT","REL"};
  for(int b=0;b<2;++b){int y=110+b*305;label(b?"SIZZLE":"HARSHNESS",at(1,10,y,panels[1].getWidth()-20,20),14);for(int j=0;j<6;++j){label(dsNames[j],at(1,5,y+25+j*36,52,18),10);scale(dsSliders[b][j],false);}for(int c=0;c<2;++c){auto rr=at(1,25,y+273+c*10,panels[1].getWidth()-40,5);g.setColour(bg);g.fillRect(rr);g.setColour(cyan);g.fillRect(rr.withWidth((int)(rr.getWidth()*juce::jlimit(0.f,12.f,processor.deessGR[b][c].load())/12.f)));}}
  auto drawKnobs=[&](std::initializer_list<juce::Slider*> ks,std::initializer_list<const char*> ns){auto it=ns.begin();for(auto* k:ks){label(*it++,k->getBounds().translated(0,-20).withHeight(20));scale(*k,true);}};
