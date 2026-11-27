@@ -68,7 +68,7 @@ private:
  DrumBusProcessor::EqResponse responseCurve{};
  int grNumericTicks=0;
  float grNumericDisplayed=0.f;
- juce::TextButton analyse{"EQ LISTEN (5 s)"};
+ juce::TextButton analyse{"EQ LISTEN (5 s)"},autoEqReset{"RESET"};
  juce::ToggleButton enabled{"ON"},tiltEnabled{"TILT EQ"};
  NumericSlider matchOutput,globalOutput;
  juce::ToggleButton globalBypass{"BYPASS"};
