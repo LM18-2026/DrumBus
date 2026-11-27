@@ -13,7 +13,7 @@ DrumBusProcessor::DrumBusProcessor()
 juce::AudioProcessorValueTreeState::ParameterLayout DrumBusProcessor::params(){
  std::vector<std::unique_ptr<juce::RangedAudioParameter>> p;
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"listen",1},"Analyse",false));
- p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"enable",1},"Ballpark EQ",true));
+ p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"enable",1},"Auto EQ",true));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"blend",1},"EQ Blend",juce::NormalisableRange<float>(0.f,100.f,1.f),100.f));
  p.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID{"strength",1},"Match Depth",juce::NormalisableRange<float>(0.f,100.f,1.f),35.f));
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"tiltEnable",1},"Tilt EQ Enabled",false));
@@ -50,6 +50,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout DrumBusProcessor::params(){
   for(auto id:{"On","Listen","Delta"})p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{prefix+id,1},prefix+id,false));
  }
  p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"powerEnable",1},"Power EQ Enabled",false));
+ p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"powerDelta",1},"Power SAT Delta",false));
+ p.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID{"powerCut",1},"Power LoCut 250 Hz",false));
  return {p.begin(),p.end()};
 }
 int DrumBusProcessor::bandForFrequency(double hz) const {
@@ -97,6 +99,7 @@ void DrumBusProcessor::analyseReference(){
 }
 void DrumBusProcessor::prepareToPlay(double sr,int block){
  rate=sr;
+ powerLow={};powerCutMix.reset(sr,0.02);powerDeltaMix.reset(sr,0.02);powerCutMix.setCurrentAndTargetValue(0.f);powerDeltaMix.setCurrentAndTargetValue(0.f);
  deess={};
  bypassDry.setSize(2,juce::jmax(1,block));
  for(auto* v:{&matchOutputSmooth,&globalOutputSmooth,&bypassSmooth})v->reset(sr,0.02);
@@ -148,6 +151,7 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  if(buffer.getNumChannels()<2)return;
  const bool canBypass=n<=bypassDry.getNumSamples();
  if(canBypass)for(int c=0;c<2;++c)bypassDry.copyFrom(c,0,buffer,c,0,n);
+ if(resetRequested.exchange(false)){matched.store(false);pendingEqBank.store(-1);eqFadeRemaining=0;eqCrossfading.store(false);capturedCount.store(0);readyToMatch.store(false);analysisPercent.store(0);rmsInputSum=rmsOutputSum=0;rmsSamples=0;rmsTrim=1.f;rmsTrimSmooth.setTargetValue(1.f);wasListening=false;deess={};powerLow={};for(auto& f:sweetParam)f.reset();for(auto& ch:sweetBass)for(auto& f:ch)f.reset();for(auto& ch:sweetTreble)for(auto& f:ch)f.reset();reverb.reset();compEnvelope={};compGainDb={};compStereoEnvelope=compStereoGainDb=compGrVuState=0.f;}
  const bool listening=*state.getRawParameterValue("listen")>0.5f;
  double inputPowerBlock=0.0,inputPeakBlock=0.0;
  for(int c=0;c<2;++c){const auto* d=buffer.getReadPointer(c);for(int i=0;i<n;++i){inputPowerBlock+=(double)d[i]*d[i];inputPeakBlock=juce::jmax(inputPeakBlock,(double)std::abs(d[i]));}}
@@ -344,17 +348,19 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  const bool powerOn=state.getRawParameterValue("powerEnable")->load()>0.5f;
  sweetGainSmooth.setTargetValue(powerOn?state.getRawParameterValue("sweetGain")->load():0.f);
  sweetSatSmooth.setTargetValue(powerOn?state.getRawParameterValue("sweetSat")->load()/100.f:0.f);
+ powerCutMix.setTargetValue(state.getRawParameterValue("powerCut")->load());powerDeltaMix.setTargetValue(state.getRawParameterValue("powerDelta")->load());
+ const float cutCoeff=std::exp(-juce::MathConstants<float>::twoPi*250.f/(float)rate);
  const float paramFreq=state.getRawParameterValue("sweetFreq")->load();
  const float paramQ=state.getRawParameterValue("sweetQ")->load();
  for(int i=0;i<n;++i){
   const float bass=sweetBassSmooth.getNextValue(),treble=sweetTrebleSmooth.getNextValue();
-  const float gain=sweetGainSmooth.getNextValue(),sat=sweetSatSmooth.getNextValue();
+  const float gain=sweetGainSmooth.getNextValue(),sat=sweetSatSmooth.getNextValue(),cut=powerCutMix.getNextValue(),deltaMix=powerDeltaMix.getNextValue();
   // 32-sample coefficient ramp; filter states never reset during automation.
   if((i&31)==0){
    for(int c=0;c<2;++c){
     for(int b=0;b<sweetBands;++b){
      sweetBass[(size_t)c][(size_t)b].setPeak(rate,centers[b],0.8,bassCurve[b]*bass);
-     sweetTreble[(size_t)c][(size_t)b].setPeak(rate,centers[b],0.8,trebleCurve[b]*treble);
+     sweetTreble[(size_t)c][(size_t)b].setPeak(rate,centers[b],0.8,trebleCurve[b]*treble*1.3);
     }
     sweetParam[(size_t)c].setPeak(rate,paramFreq,paramQ,gain);
    }
@@ -363,9 +369,11 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
    float x=buffer.getSample(c,i);
    for(auto& f:sweetBass[(size_t)c])x=f.process(x);
    for(auto& f:sweetTreble[(size_t)c])x=f.process(x);
-   x=sweetParam[(size_t)c].process(x);
-   // Soft saturation; 0% SAT is bit-identical to the unsaturated signal.
-   if(sat>0.f){const float driven=std::tanh(2.5f*x)/std::tanh(2.5f);x+=sat*(driven-x);}
+   powerLow[c]=cutCoeff*powerLow[c]+(1.f-cutCoeff)*x;
+   const float dryLow=cut*powerLow[c], high=x-dryLow;
+   const float eq=sweetParam[(size_t)c].process(high), diff=eq-high;
+   const auto shape=[](float v){return std::tanh(2.5f*v)/std::tanh(2.5f);};
+   x=dryLow+eq+sat*((1.f-deltaMix)*(shape(eq)-eq)+deltaMix*(shape(diff)-diff));
    buffer.setSample(c,i,x);
   }
  }
@@ -646,4 +654,10 @@ void DrumBusProcessor::processDeess(juce::AudioBuffer<float>& buffer,int n){
  }
  for(int c=0;c<2;++c)deessGR[b][c].store((float)deess[b][c].gain);
  }
+}
+
+void DrumBusProcessor::resetPlugin(){
+ for(auto* p:getParameters()){p->beginChangeGesture();p->setValueNotifyingHost(p->getDefaultValue());p->endChangeGesture();}
+ {juce::SpinLock::ScopedLockType lock(eqLock);savedMatchValid=false;savedMatchGains.fill(0.f);}
+ readyToMatch.store(false);matched.store(false);resetRequested.store(true);resetMeters();
 }
