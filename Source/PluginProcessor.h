@@ -35,6 +35,12 @@ public:
  std::atomic<float> inputPeakDb{-100.f},outputPeakDb{-100.f},inputRmsDb{-100.f},outputRmsDb{-100.f};
  std::atomic<float> inputVuDb{-100.f},outputVuDb{-100.f};
  void resetPlugin();
+ void startAutoGain() noexcept {autoGainStatus.store(1);autoGainRequest.store(true);}
+ std::atomic<int> autoGainStatus{0};
+ std::atomic<bool> autoGainRequest{false};
+ std::atomic<float> autoGainCorrection{0.f};
+ double autoIn=0,autoOut=0;
+ int autoRemaining=0,autoSettle=0;
  std::atomic<bool> resetRequested{false};
  void resetMeters() noexcept {metersResetGeneration.fetch_add(1,std::memory_order_release);}
  static constexpr int eqDisplayPoints=160;
