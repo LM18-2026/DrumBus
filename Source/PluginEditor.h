@@ -17,16 +17,24 @@ private:
    auto w=wheel;w.deltaX*=0.1f;w.deltaY*=0.1f;juce::Slider::mouseWheelMove(e,w);
   }
   void mouseDown(const juce::MouseEvent& e) override {
+   if(e.eventComponent!=this)return;
    setMouseDragSensitivity(e.mods.isShiftDown()?2500:250);
    juce::Slider::mouseDown(e);
-   if(e.eventComponent!=this)if(auto* l=dynamic_cast<juce::Label*>(e.eventComponent)){l->showEditor();if(auto* ed=l->getCurrentTextEditor())ed->selectAll();}
+
   }
   void mouseDrag(const juce::MouseEvent& e) override {
+   if(e.eventComponent!=this)return;
    setMouseDragSensitivity(e.mods.isShiftDown()?2500:250);juce::Slider::mouseDrag(e);
   }
   double resetValue=0;
  };
  struct SwitchLook : juce::LookAndFeel_V4 {
+  juce::Label* createSliderTextBox(juce::Slider& slider) override {
+   auto* label=juce::LookAndFeel_V4::createSliderTextBox(slider);
+   label->setEditable(true,false,true);
+   label->onEditorShow=[label]{if(auto* ed=label->getCurrentTextEditor())ed->selectAll();};
+   return label;
+  }
   int getSliderThumbRadius(juce::Slider& s) override {return juce::roundToInt(1.25f*juce::LookAndFeel_V4::getSliderThumbRadius(s));}
   void drawToggleButton(juce::Graphics& g,juce::ToggleButton& b,bool,bool) override {
    auto r=b.getLocalBounds().toFloat().reduced(1.f);
@@ -42,7 +50,7 @@ private:
  std::array<juce::Rectangle<int>,6> panels{};
  bool lastEnd=false,lastReverse=false;
  juce::ToggleButton powerEnabled{"ON"},powerDelta{"SAT DELTA"},powerCut{"LOCUT 250 Hz"};
- juce::TextButton rmsMatch{"RMS MATCH"},pluginReset{"RESET PLUGIN"};
+ juce::TextButton rmsMatch{"AUTO GAIN"},pluginReset{"RESET PLUGIN"};
  std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> powerDeltaA,powerCutA;
  std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> powerAttachment;
  void timerCallback() override {
@@ -51,6 +59,7 @@ private:
   dsEnd.setButtonText(processor.state.getRawParameterValue("deessEnd")->load()>0.5f?"END OF CHAIN":"POST AUTO EQ");
   moduleOrder.setButtonText(processor.state.getRawParameterValue("moduleOrder")->load()>0.5f?"1176 > AMBIENCE":"AMBIENCE > 1176");
   powerDelta.setButtonText(powerDelta.getToggleState()?"SAT DELTA":"SAT FULL");
+  const int ag=processor.autoGainStatus.load();rmsMatch.setButtonText(ag==1||ag==2?"MEASURING":ag==3?"RETRY GAIN":"AUTO GAIN");rmsMatch.setEnabled(ag!=1&&ag!=2);
   processor.getEqResponse(responseCurve);
   if(++grNumericTicks>=3){grNumericTicks=0;grNumericDisplayed=processor.compReductionDb.load(std::memory_order_relaxed);}
   repaint();
