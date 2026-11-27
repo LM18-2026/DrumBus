@@ -34,6 +34,8 @@ public:
  std::atomic<float> compReductionDb{0.f},compGrVuDb{0.f};
  std::atomic<float> inputPeakDb{-100.f},outputPeakDb{-100.f},inputRmsDb{-100.f},outputRmsDb{-100.f};
  std::atomic<float> inputVuDb{-100.f},outputVuDb{-100.f};
+ void resetPlugin();
+ std::atomic<bool> resetRequested{false};
  void resetMeters() noexcept {metersResetGeneration.fetch_add(1,std::memory_order_release);}
  static constexpr int eqDisplayPoints=160;
  using EqResponse=std::array<float,eqDisplayPoints>;
@@ -89,6 +91,8 @@ private:
  void processDeess(juce::AudioBuffer<float>&,int);
  std::array<std::array<SweetBiquad,sweetBands>,2> sweetBass{},sweetTreble{};
  std::array<SweetBiquad,2> sweetParam{};
+ std::array<float,2> powerLow{};
+ juce::SmoothedValue<float> powerCutMix,powerDeltaMix;
  juce::SmoothedValue<float> sweetBassSmooth,sweetTrebleSmooth,sweetGainSmooth,sweetSatSmooth;
  float sweetLastFreq=1000.f,sweetLastQ=1.f;
 
