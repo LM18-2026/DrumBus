@@ -35,6 +35,8 @@ public:
  std::atomic<float> inputPeakDb{-100.f},outputPeakDb{-100.f},inputRmsDb{-100.f},outputRmsDb{-100.f};
  std::atomic<float> inputVuDb{-100.f},outputVuDb{-100.f};
  void resetPlugin();
+ void resetAutoEq();
+ std::atomic<bool> autoEqResetRequested{false};
  void startAutoGain() noexcept {autoGainStatus.store(1);autoGainRequest.store(true);}
  std::atomic<int> autoGainStatus{0};
  std::atomic<bool> autoGainRequest{false};
