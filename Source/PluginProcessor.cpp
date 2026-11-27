@@ -99,6 +99,7 @@ void DrumBusProcessor::analyseReference(){
 }
 void DrumBusProcessor::prepareToPlay(double sr,int block){
  rate=sr;
+ autoRemaining=autoSettle=0;autoGainStatus.store(0);autoGainRequest.store(false);
  powerLow={};powerCutMix.reset(sr,0.02);powerDeltaMix.reset(sr,0.02);powerCutMix.setCurrentAndTargetValue(0.f);powerDeltaMix.setCurrentAndTargetValue(0.f);
  deess={};
  bypassDry.setSize(2,juce::jmax(1,block));
@@ -149,9 +150,10 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  juce::ScopedNoDenormals nd;
  const int n=buffer.getNumSamples();
  if(buffer.getNumChannels()<2)return;
+ if(autoGainRequest.exchange(false)){autoIn=autoOut=0;autoRemaining=juce::roundToInt(rate*5.0);autoSettle=juce::roundToInt(rate*0.05);}
  const bool canBypass=n<=bypassDry.getNumSamples();
  if(canBypass)for(int c=0;c<2;++c)bypassDry.copyFrom(c,0,buffer,c,0,n);
- if(resetRequested.exchange(false)){matched.store(false);pendingEqBank.store(-1);eqFadeRemaining=0;eqCrossfading.store(false);capturedCount.store(0);readyToMatch.store(false);analysisPercent.store(0);rmsInputSum=rmsOutputSum=0;rmsSamples=0;rmsTrim=1.f;rmsTrimSmooth.setTargetValue(1.f);wasListening=false;deess={};powerLow={};for(auto& f:sweetParam)f.reset();for(auto& ch:sweetBass)for(auto& f:ch)f.reset();for(auto& ch:sweetTreble)for(auto& f:ch)f.reset();reverb.reset();compEnvelope={};compGainDb={};compStereoEnvelope=compStereoGainDb=compGrVuState=0.f;}
+ if(resetRequested.exchange(false)){autoRemaining=autoSettle=0;autoGainStatus.store(0);autoGainRequest.store(false);matched.store(false);pendingEqBank.store(-1);eqFadeRemaining=0;eqCrossfading.store(false);capturedCount.store(0);readyToMatch.store(false);analysisPercent.store(0);rmsInputSum=rmsOutputSum=0;rmsSamples=0;rmsTrim=1.f;rmsTrimSmooth.setTargetValue(1.f);wasListening=false;deess={};powerLow={};for(auto& f:sweetParam)f.reset();for(auto& ch:sweetBass)for(auto& f:ch)f.reset();for(auto& ch:sweetTreble)for(auto& f:ch)f.reset();reverb.reset();compEnvelope={};compGainDb={};compStereoEnvelope=compStereoGainDb=compGrVuState=0.f;}
  const bool listening=*state.getRawParameterValue("listen")>0.5f;
  double inputPowerBlock=0.0,inputPeakBlock=0.0;
  for(int c=0;c<2;++c){const auto* d=buffer.getReadPointer(c);for(int i=0;i<n;++i){inputPowerBlock+=(double)d[i]*d[i];inputPeakBlock=juce::jmax(inputPeakBlock,(double)std::abs(d[i]));}}
@@ -380,7 +382,19 @@ void DrumBusProcessor::processBlock(juce::AudioBuffer<float>& buffer,juce::MidiB
  if(deessEnd)processDeess(buffer,n);
  globalOutputSmooth.setTargetValue(juce::Decibels::decibelsToGain(state.getRawParameterValue("globalOutput")->load()));
  bypassSmooth.setTargetValue(state.getRawParameterValue("globalBypass")->load()>0.5f?1.f:0.f);
- for(int i=0;i<n;++i){const float g=globalOutputSmooth.getNextValue(),b=bypassSmooth.getNextValue();for(int c=0;c<2;++c){const float wet=buffer.getSample(c,i);buffer.setSample(c,i,g*(canBypass?wet+(bypassDry.getSample(c,i)-wet)*b:wet));}}
+ for(int i=0;i<n;++i){
+ const float g=globalOutputSmooth.getNextValue(),b=bypassSmooth.getNextValue();
+ const bool measure=canBypass&&autoRemaining>0&&autoSettle==0&&b<0.001f;
+ for(int c=0;c<2;++c){const float wet=g*buffer.getSample(c,i);const float dry=canBypass?bypassDry.getSample(c,i):wet;
+ if(measure){autoIn+=(double)dry*dry;autoOut+=(double)wet*wet;}
+ buffer.setSample(c,i,wet+(dry-wet)*b);}
+ if(autoSettle>0)--autoSettle;
+ if(measure&&--autoRemaining==0){
+ if(autoIn>1.e-9&&autoOut>1.e-9){autoGainCorrection.store((float)(10.0*std::log10(autoIn/autoOut)));autoGainStatus.store(2);}
+ else autoGainStatus.store(3);
+ }
+ if(b>0.001f&&autoRemaining>0){autoRemaining=0;autoGainStatus.store(3);}
+ }
  // VU-style RMS bar: 300 ms power-domain integration.
  // Numeric RMS: cumulative energy average since RESET.
  // Numeric PEAK: maximum absolute sample since RESET.
@@ -456,6 +470,13 @@ void DrumBusProcessor::loadScaledReverb(float amount){
   juce::dsp::Convolution::Trim::no,juce::dsp::Convolution::Normalise::no);
 }
 void DrumBusProcessor::timerCallback(){
+ if(autoGainStatus.load()==2){
+ if(auto* p=state.getParameter("globalOutput")){
+ const float db=juce::jlimit(-24.f,24.f,state.getRawParameterValue("globalOutput")->load()+autoGainCorrection.load());
+ p->beginChangeGesture();p->setValueNotifyingHost(p->convertTo0to1(db));p->endChangeGesture();
+ }
+ resetMeters();autoGainStatus.store(0);
+ }
  const float length=*state.getRawParameterValue("reverbLength");
  if(length!=lastReverbLength){loadScaledReverb(length);lastReverbLength=length;}
 
