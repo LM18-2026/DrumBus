@@ -15,8 +15,17 @@ DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p)
  globalBypassAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"globalBypass",globalBypass);
  addAndMakeVisible(moduleOrder);
  moduleOrder.onClick=[this]{if(auto* p=processor.state.getParameter("moduleOrder")){p->beginChangeGesture();p->setValueNotifyingHost(p->getValue()>0.5f?0.f:1.f);p->endChangeGesture();}};
+ addAndMakeVisible(loadRef);addAndMakeVisible(customName);
+ customName.setJustificationType(juce::Justification::centred);customName.setFont(juce::Font(juce::FontOptions(11.f)));
+ customName.setText(processor.getCustomReference().name,juce::dontSendNotification);
+ loadRef.onClick=[this]{
+  if(refWorker)return;
+  refChooser=std::make_unique<juce::FileChooser>("Select reference audio",juce::File{},"*.wav;*.aif;*.aiff;*.flac");
+  juce::Component::SafePointer<DrumBusEditor> safe(this);
+  refChooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,[safe](const juce::FileChooser& chooser){if(safe!=nullptr&&chooser.getResult().existsAsFile())safe->startReference(chooser.getResult());});
+ };
  addAndMakeVisible(referenceType);
- referenceType.addItem("KIT",1);referenceType.addItem("KICK",2);referenceType.addItem("SNARE",3);referenceType.addItem("HIHAT",4);referenceType.addItem("TOMS",5);referenceType.addItem("AG1",6);referenceType.addItem("PNO1",7);
+ referenceType.addItem("KIT",1);referenceType.addItem("KICK",2);referenceType.addItem("SNARE",3);referenceType.addItem("HIHAT",4);referenceType.addItem("TOMS",5);referenceType.addItem("AG1",6);referenceType.addItem("PNO1",7);referenceType.addItem("CUSTOM",8);
  referenceAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(processor.state,"referenceType",referenceType);
  addAndMakeVisible(sweetEnabled);
  sweetEnableAttachment=std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(processor.state,"sweetEnable",sweetEnabled);
@@ -112,6 +121,12 @@ DrumBusEditor::DrumBusEditor(DrumBusProcessor& p):juce::AudioProcessorEditor(&p)
  startTimerHz(10);
 }
 
+void DrumBusEditor::startReference(const juce::File& file){
+ if(refWorker)return;
+ refWorker=std::make_unique<RefWorker>();refWorker->file=file;
+ loadRef.setEnabled(false);loadRef.setButtonText("ANALYSING");customName.setText(file.getFileName(),juce::dontSendNotification);
+ refWorker->startThread();
+}
 void DrumBusEditor::resized(){
  const int widths[]={280,300,175,220,180,220};
  const int total=1375;
@@ -122,7 +137,7 @@ void DrumBusEditor::resized(){
  auto place=[&](juce::Component& c,int id,int x,int y,int w,int h){auto p=panels[id];c.setBounds(p.getX()+x,p.getY()+y,w,h);};
  auto head=[&](juce::Component& c,int id){place(c,id,panels[id].getWidth()-55,8,45,25);};
  head(enabled,0);head(reverbEnabled,2);head(compEnabled,3);head(sweetEnabled,4);head(powerEnabled,5);
- int w=panels[0].getWidth();place(referenceType,0,12,65,w-24,28);place(analyse,0,12,105,w-104,28);place(autoEqReset,0,w-86,105,74,28);
+ int w=panels[0].getWidth();place(referenceType,0,12,65,w-24,28);place(analyse,0,12,105,w-104,28);place(autoEqReset,0,w-86,105,74,28);place(loadRef,0,12,140,88,26);place(customName,0,106,140,w-118,26);
  juce::Slider* eq[]={&depth,&blend,&tiltAmount,&matchOutput};
  for(int j=0;j<4;++j)place(*eq[j],0,12,360+j*75,w-24,32);
  w=panels[1].getWidth();place(dsEnd,1,10,43,w-20,25);place(dsDual,1,10,75,w-20,25);
@@ -139,7 +154,7 @@ void DrumBusEditor::paint(juce::Graphics& g){
  auto bg=juce::Colour(0xff101721),panel=juce::Colour(0xff1a2532),cyan=juce::Colour(0xff3dbadf),muted=juce::Colour(0xffd4e4f6);
  g.fillAll(bg);
  auto label=[&](juce::String t,juce::Rectangle<int> r,float size=12.f){g.setColour(muted);g.setFont(juce::Font(juce::FontOptions(size)));g.drawFittedText(t,r,juce::Justification::centred,1);};
- label("LM18 DRUMS | V0.45", {10,8,320,38},23.f);
+ label("LM18 DRUMS | V0.46", {10,8,320,38},23.f);
  const char* names[]={"AUTO EQ","DE-ESSER","AMBIENCE","1176","SWEET ENERGY","POWER EQ"};
  for(int i=0;i<6;++i){auto p=panels[i];g.setColour(panel);g.fillRoundedRectangle(p.toFloat(),5);g.setColour(cyan);g.drawRoundedRectangle(p.toFloat(),5,1);label(names[i],p.withHeight(40).withTrimmedRight(i==1?0:55),15);}
  auto at=[&](int id,int x,int y,int w,int h){return juce::Rectangle<int>(panels[id].getX()+x,panels[id].getY()+y,w,h);};
